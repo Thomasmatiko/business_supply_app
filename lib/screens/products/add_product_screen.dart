@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../models/product.dart';
 import '../../services/auth_service.dart';
@@ -27,7 +29,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final AuthService _authService =
       AuthService.instance;
 
+  final ImagePicker _imagePicker = ImagePicker();
+
+  String? _imagePath;
+
   bool _isSaving = false;
+
+  // ============================================================
+  // DISPOSE
+  // ============================================================
 
   @override
   void dispose() {
@@ -39,6 +49,146 @@ class _AddProductScreenState extends State<AddProductScreen> {
     _descriptionController.dispose();
 
     super.dispose();
+  }
+
+  // ============================================================
+  // SELECT IMAGE
+  // ============================================================
+
+  Future<void> _pickImage(
+    ImageSource source,
+  ) async {
+    try {
+      final XFile? selectedImage =
+          await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      );
+
+      if (selectedImage == null) {
+        return;
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _imagePath = selectedImage.path;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Failed to select image: $e',
+          ),
+        ),
+      );
+
+      debugPrint(
+        'Product image selection error: $e',
+      );
+    }
+  }
+
+  // ============================================================
+  // IMAGE OPTIONS
+  // ============================================================
+
+  Future<void> _showImageOptions() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Select Product Image',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                ListTile(
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.photo_library),
+                  ),
+                  title: const Text(
+                    'Choose from Gallery',
+                  ),
+                  subtitle: const Text(
+                    'Select an existing image',
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+
+                    _pickImage(
+                      ImageSource.gallery,
+                    );
+                  },
+                ),
+
+                ListTile(
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.camera_alt),
+                  ),
+                  title: const Text(
+                    'Take a Photo',
+                  ),
+                  subtitle: const Text(
+                    'Use your device camera',
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+
+                    _pickImage(
+                      ImageSource.camera,
+                    );
+                  },
+                ),
+
+                if (_imagePath != null)
+                  ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor:
+                          Colors.red.shade50,
+                      child: const Icon(
+                        Icons.delete_outline,
+                        color: Colors.red,
+                      ),
+                    ),
+                    title: const Text(
+                      'Remove Image',
+                    ),
+                    subtitle: const Text(
+                      'Remove the selected image',
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+
+                      setState(() {
+                        _imagePath = null;
+                      });
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   // ============================================================
@@ -115,8 +265,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
         stock: int.parse(
           _stockController.text.trim(),
         ),
-        description: _descriptionController.text.trim(),
+        description:
+            _descriptionController.text.trim(),
         sellerId: sellerId,
+        imagePath: _imagePath,
       );
 
       await _productService.addProduct(
@@ -165,12 +317,126 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   // ============================================================
+  // PRODUCT IMAGE WIDGET
+  // ============================================================
+
+  Widget _buildProductImage() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Product Image',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium,
+        ),
+
+        const SizedBox(height: 12),
+
+        GestureDetector(
+          onTap: _showImageOptions,
+          child: Container(
+            width: double.infinity,
+            height: 220,
+            decoration: BoxDecoration(
+              color: Theme.of(context)
+                  .colorScheme
+                  .surface,
+              borderRadius:
+                  BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.grey.shade300,
+              ),
+            ),
+            child: _imagePath == null
+                ? Column(
+                    mainAxisAlignment:
+                        MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons
+                            .add_photo_alternate_outlined,
+                        size: 56,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary,
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      const Text(
+                        'Add Product Image',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight:
+                              FontWeight.w600,
+                        ),
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      const Text(
+                        'Tap to choose from gallery or camera',
+                        textAlign:
+                            TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  )
+                : ClipRRect(
+                    borderRadius:
+                        BorderRadius.circular(16),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.file(
+                          File(
+                            _imagePath!,
+                          ),
+                          fit: BoxFit.cover,
+                        ),
+
+                        Positioned(
+                          right: 12,
+                          top: 12,
+                          child: Container(
+                            decoration:
+                                const BoxDecoration(
+                              color: Colors.white,
+                              shape:
+                                  BoxShape.circle,
+                            ),
+                            child: IconButton(
+                              onPressed:
+                                  _showImageOptions,
+                              icon: const Icon(
+                                Icons.edit,
+                              ),
+                              tooltip:
+                                  'Change image',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ============================================================
   // BUILD
   // ============================================================
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = _authService.currentUser;
+    final currentUser =
+        _authService.currentUser;
 
     final isSeller =
         currentUser?.isSeller ?? false;
@@ -181,13 +447,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
           'Add Product',
         ),
       ),
+
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
+
         child: Form(
           key: _formKey,
+
           child: Column(
             crossAxisAlignment:
                 CrossAxisAlignment.start,
+
             children: [
               // ==================================================
               // HEADER
@@ -221,18 +491,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
               const SizedBox(height: 20),
 
               // ==================================================
+              // PRODUCT IMAGE
+              // ==================================================
+
+              _buildProductImage(),
+
+              const SizedBox(height: 24),
+
+              // ==================================================
               // PRODUCT NAME
               // ==================================================
 
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(
+                decoration:
+                    const InputDecoration(
                   labelText: 'Product Name',
-                  hintText: 'Enter product name',
+                  hintText:
+                      'Enter product name',
                   prefixIcon: Icon(
                     Icons.inventory_2,
                   ),
-                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null ||
@@ -251,14 +530,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
               // ==================================================
 
               TextFormField(
-                controller: _categoryController,
-                decoration: const InputDecoration(
+                controller:
+                    _categoryController,
+                decoration:
+                    const InputDecoration(
                   labelText: 'Category',
-                  hintText: 'Enter product category',
+                  hintText:
+                      'Enter product category',
                   prefixIcon: Icon(
                     Icons.category,
                   ),
-                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null ||
@@ -283,14 +564,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: const InputDecoration(
-                  labelText: 'Selling Price (TZS)',
+                decoration:
+                    const InputDecoration(
+                  labelText:
+                      'Selling Price (TZS)',
                   hintText:
                       'Enter selling price in TZS',
                   prefixIcon: Icon(
                     Icons.payments,
                   ),
-                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null ||
@@ -325,14 +607,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: const InputDecoration(
-                  labelText: 'Cost Price (TZS)',
+                decoration:
+                    const InputDecoration(
+                  labelText:
+                      'Cost Price (TZS)',
                   hintText:
                       'Enter cost price in TZS',
                   prefixIcon: Icon(
                     Icons.price_check,
                   ),
-                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null ||
@@ -364,14 +647,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 controller: _stockController,
                 keyboardType:
                     TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Stock Quantity',
+                decoration:
+                    const InputDecoration(
+                  labelText:
+                      'Stock Quantity',
                   hintText:
                       'Enter stock quantity',
                   prefixIcon: Icon(
                     Icons.warehouse,
                   ),
-                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null ||
@@ -403,14 +687,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 controller:
                     _descriptionController,
                 maxLines: 4,
-                decoration: const InputDecoration(
+                decoration:
+                    const InputDecoration(
                   labelText: 'Description',
                   hintText:
                       'Enter product description',
                   prefixIcon: Icon(
                     Icons.description,
                   ),
-                  border: OutlineInputBorder(),
                   alignLabelWithHint: true,
                 ),
               ),
@@ -429,6 +713,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                       _isSaving
                           ? null
                           : _saveProduct,
+
                   child: _isSaving
                       ? const SizedBox(
                           height: 24,

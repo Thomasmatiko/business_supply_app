@@ -141,19 +141,47 @@ class ProductService {
     );
   }
 
-  // ============================================================
-  // DELETE PRODUCT
-  // ============================================================
+// DELETE PRODUCT
 
-  Future<int> deleteProduct(String id) async {
-    final db = await _databaseHelper.database;
+// ============================================================
 
-    return await db.delete(
-      'products',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+Future<int> deleteProduct(String id) async {
+  final productId = id.trim();
+
+  if (productId.isEmpty) {
+    return 0;
   }
+
+  final db = await _databaseHelper.database;
+
+  // ----------------------------------------------------------
+  // CHECK ORDER HISTORY
+  // ----------------------------------------------------------
+
+  final existingOrders = await db.query(
+    'orders',
+    columns: ['id'],
+    where: 'product_id = ?',
+    whereArgs: [productId],
+    limit: 1,
+  );
+
+  if (existingOrders.isNotEmpty) {
+    // Product is referenced by an existing order.
+    // Do not delete it.
+    return 0;
+  }
+
+  // ----------------------------------------------------------
+  // DELETE PRODUCT
+  // ----------------------------------------------------------
+
+  return await db.delete(
+    'products',
+    where: 'id = ?',
+    whereArgs: [productId],
+  );
+}
 
   // ============================================================
   // REDUCE STOCK

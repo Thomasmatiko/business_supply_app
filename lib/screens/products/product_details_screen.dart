@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../models/product.dart';
 import '../../services/auth_service.dart';
+import '../../services/cart_service.dart';
 import '../../services/order_service.dart';
 import '../../services/product_service.dart';
+import '../buyer/cart_screen.dart';
 import 'adjust_stock_screen.dart';
 import 'edit_product_screen.dart';
 
@@ -28,13 +32,18 @@ class _ProductDetailsScreenState
   final AuthService _authService =
       AuthService.instance;
 
+  final CartService _cartService =
+      CartService.instance;
+
   late Product _currentProduct;
 
   bool _isDeleting = false;
+  bool _isAddingToCart = false;
 
   @override
   void initState() {
     super.initState();
+
     _currentProduct = widget.product;
   }
 
@@ -128,6 +137,109 @@ class _ProductDetailsScreenState
   }
 
   // ============================================================
+  // ADD TO CART
+  // ============================================================
+
+  Future<void> _addToCart() async {
+    if (_isAddingToCart || _isDeleting) {
+      return;
+    }
+
+    final user = _authService.currentUser;
+
+    // ----------------------------------------------------------
+    // CHECK LOGIN
+    // ----------------------------------------------------------
+
+    if (user == null) {
+      _showMessage(
+        'Please login as a buyer to add products to cart.',
+      );
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // CHECK BUYER
+    // ----------------------------------------------------------
+
+    if (!user.isBuyer) {
+      _showMessage(
+        'Only buyers can add products to cart.',
+      );
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // CHECK STOCK
+    // ----------------------------------------------------------
+
+    if (_currentProduct.stock <= 0) {
+      _showMessage(
+        'This product is out of stock.',
+      );
+      return;
+    }
+
+    setState(() {
+      _isAddingToCart = true;
+    });
+
+    try {
+      final success =
+          await _cartService.addToCart(
+        buyerId: user.id,
+        productId: _currentProduct.id,
+        quantity: 1,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (success) {
+        _showMessage(
+          '${_currentProduct.name} added to cart.',
+        );
+      } else {
+        _showMessage(
+          'Unable to add product to cart. '
+          'The requested quantity may exceed available stock.',
+        );
+      }
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      _showMessage(
+        'Error adding product to cart: $e',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAddingToCart = false;
+        });
+      }
+    }
+  }
+
+  // ============================================================
+  // OPEN CART
+  // ============================================================
+
+  Future<void> _openCart() async {
+    if (_isDeleting) {
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const CartScreen(),
+      ),
+    );
+  }
+
+  // ============================================================
   // EDIT PRODUCT
   // ============================================================
 
@@ -154,6 +266,10 @@ class _ProductDetailsScreenState
     setState(() {
       _currentProduct = updatedProduct;
     });
+
+    _showMessage(
+      'Product updated successfully.',
+    );
   }
 
   // ============================================================
@@ -184,17 +300,13 @@ class _ProductDetailsScreenState
       _currentProduct = updatedProduct;
     });
 
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
-      const SnackBar(
-        content:
-            Text('Stock updated successfully.'),
-      ),
+    _showMessage(
+      'Stock updated successfully.',
     );
   }
 
   // ============================================================
-  // DELETE PRODUCT
+  // CONFIRM DELETE
   // ============================================================
 
   Future<void> _confirmDeleteProduct() async {
@@ -203,6 +315,10 @@ class _ProductDetailsScreenState
     }
 
     try {
+      // --------------------------------------------------------
+      // CHECK ORDER HISTORY
+      // --------------------------------------------------------
+
       final hasOrders =
           await OrderService.instance
               .hasOrdersForProduct(
@@ -220,13 +336,18 @@ class _ProductDetailsScreenState
         return;
       }
 
+      // --------------------------------------------------------
+      // CONFIRMATION DIALOG
+      // --------------------------------------------------------
+
       final shouldDelete =
           await showDialog<bool>(
         context: context,
         builder: (dialogContext) {
           return AlertDialog(
-            title:
-                const Text('Delete Product'),
+            title: const Text(
+              'Delete Product',
+            ),
             content: Text(
               'Are you sure you want to delete '
               '"${_currentProduct.name}"?\n\n'
@@ -235,31 +356,30 @@ class _ProductDetailsScreenState
             actions: [
               TextButton(
                 onPressed: () {
-                  Navigator.pop(
+                  Navigator.of(
                     dialogContext,
-                    false,
-                  );
+                  ).pop(false);
                 },
-                child:
-                    const Text('Cancel'),
+                child: const Text(
+                  'Cancel',
+                ),
               ),
               FilledButton(
                 onPressed: () {
-                  Navigator.pop(
+                  Navigator.of(
                     dialogContext,
-                    true,
-                  );
+                  ).pop(true);
                 },
-                child:
-                    const Text('Delete'),
+                child: const Text(
+                  'Delete',
+                ),
               ),
             ],
           );
         },
       );
 
-      if (shouldDelete != true ||
-          !mounted) {
+      if (!mounted || shouldDelete != true) {
         return;
       }
 
@@ -274,6 +394,10 @@ class _ProductDetailsScreenState
       );
     }
   }
+
+  // ============================================================
+  // DELETE PRODUCT
+  // ============================================================
 
   Future<void> _deleteProduct() async {
     if (_isDeleting) {
@@ -294,26 +418,41 @@ class _ProductDetailsScreenState
         return;
       }
 
+      // --------------------------------------------------------
+      // DELETE SUCCESS
+      // --------------------------------------------------------
+
       if (result > 0) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Product deleted successfully.',
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Product deleted successfully.',
+              ),
             ),
-          ),
-        );
+          );
 
-        Navigator.pop(context, true);
-      } else {
-        setState(() {
-          _isDeleting = false;
-        });
+        // IMPORTANT:
+        // ProductsScreen does NOT expect Product here.
+        // We return bool true to tell ProductsScreen
+        // that the product was deleted.
+        Navigator.of(context).pop(true);
 
-        _showMessage(
-          'Product could not be deleted.',
-        );
+        return;
       }
+
+      // --------------------------------------------------------
+      // DELETE FAILED
+      // --------------------------------------------------------
+
+      setState(() {
+        _isDeleting = false;
+      });
+
+      _showMessage(
+        'Product could not be deleted.',
+      );
     } catch (e) {
       if (!mounted) {
         return;
@@ -334,11 +473,173 @@ class _ProductDetailsScreenState
   // ============================================================
 
   void _showMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+
     ScaffoldMessenger.of(context)
-        .showSnackBar(
-      SnackBar(
-        content: Text(message),
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+        ),
+      );
+  }
+
+  // ============================================================
+  // PRODUCT IMAGE PLACEHOLDER
+  // ============================================================
+
+  Widget _buildProductImagePlaceholder() {
+    final colorScheme =
+        Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      height: 260,
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer,
+        borderRadius:
+            BorderRadius.circular(20),
       ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.inventory_2,
+              size: 70,
+              color:
+                  colorScheme.onPrimaryContainer,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _currentProduct.name.isNotEmpty
+                  ? _currentProduct.name[0]
+                      .toUpperCase()
+                  : '?',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color:
+                    colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // PRODUCT IMAGE
+  // ============================================================
+
+  Widget _buildProductImage() {
+    final imagePath =
+        _currentProduct.imagePath?.trim();
+
+    if (imagePath != null &&
+        imagePath.isNotEmpty) {
+      return ClipRRect(
+        borderRadius:
+            BorderRadius.circular(20),
+        child: SizedBox(
+          width: double.infinity,
+          height: 260,
+          child: Image.file(
+            File(imagePath),
+            fit: BoxFit.cover,
+            errorBuilder: (
+              context,
+              error,
+              stackTrace,
+            ) {
+              return _buildProductImagePlaceholder();
+            },
+          ),
+        ),
+      );
+    }
+
+    return _buildProductImagePlaceholder();
+  }
+
+  // ============================================================
+  // BUYER CART ACTIONS
+  // ============================================================
+
+  Widget _buildBuyerCartActions() {
+    if (!_isBuyer) {
+      return const SizedBox.shrink();
+    }
+
+    final outOfStock =
+        _currentProduct.stock <= 0;
+
+    return Column(
+      children: [
+        const SizedBox(height: 20),
+
+        // ------------------------------------------------------
+        // ADD TO CART
+        // ------------------------------------------------------
+
+        SizedBox(
+          width: double.infinity,
+          height: 54,
+          child: FilledButton.icon(
+            onPressed:
+                outOfStock ||
+                        _isAddingToCart ||
+                        _isDeleting
+                    ? null
+                    : _addToCart,
+            icon: _isAddingToCart
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child:
+                        CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(
+                    Icons.add_shopping_cart,
+                  ),
+            label: Text(
+              _isAddingToCart
+                  ? 'Adding...'
+                  : outOfStock
+                      ? 'Out of Stock'
+                      : 'Add to Cart',
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // ------------------------------------------------------
+        // VIEW CART
+        // ------------------------------------------------------
+
+        SizedBox(
+          width: double.infinity,
+          height: 54,
+          child: OutlinedButton.icon(
+            onPressed:
+                _isDeleting
+                    ? null
+                    : _openCart,
+            icon: const Icon(
+              Icons.shopping_cart,
+            ),
+            label: const Text(
+              'View Cart',
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -350,8 +651,22 @@ class _ProductDetailsScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title:
-            const Text('Product Details'),
+        title: const Text(
+          'Product Details',
+        ),
+        actions: [
+          if (_isBuyer)
+            IconButton(
+              onPressed:
+                  _isDeleting
+                      ? null
+                      : _openCart,
+              tooltip: 'My Cart',
+              icon: const Icon(
+                Icons.shopping_cart_outlined,
+              ),
+            ),
+        ],
       ),
 
       body: SingleChildScrollView(
@@ -361,39 +676,37 @@ class _ProductDetailsScreenState
           crossAxisAlignment:
               CrossAxisAlignment.start,
           children: [
+            // ==================================================
+            // PRODUCT IMAGE
+            // ==================================================
+
             Center(
-              child: CircleAvatar(
-                radius: 45,
-                child: Text(
-                  _currentProduct.name.isNotEmpty
-                      ? _currentProduct.name[0]
-                          .toUpperCase()
-                      : '?',
-                  style:
-                      const TextStyle(
-                    fontSize: 32,
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
-                ),
-              ),
+              child: _buildProductImage(),
             ),
 
             const SizedBox(height: 24),
 
+            // ==================================================
+            // PRODUCT NAME
+            // ==================================================
+
             Center(
               child: Text(
                 _currentProduct.name,
-                textAlign:
-                    TextAlign.center,
-                style:
-                    const TextStyle(
+                textAlign: TextAlign.center,
+                style: const TextStyle(
                   fontSize: 24,
                   fontWeight:
                       FontWeight.bold,
                 ),
               ),
             ),
+
+            // ==================================================
+            // BUYER CART ACTIONS
+            // ==================================================
+
+            _buildBuyerCartActions(),
 
             const SizedBox(height: 24),
 
@@ -410,7 +723,7 @@ class _ProductDetailsScreenState
               ),
 
             // ==================================================
-            // PRODUCT MANAGEMENT
+            // EDIT PRODUCT
             // ==================================================
 
             if (_canEditProduct)
@@ -422,10 +735,10 @@ class _ProductDetailsScreenState
                       _isDeleting
                           ? null
                           : _openEditProduct,
-                  icon:
-                      const Icon(Icons.edit),
-                  label:
-                      const Text(
+                  icon: const Icon(
+                    Icons.edit,
+                  ),
+                  label: const Text(
                     'Edit Product',
                   ),
                 ),
@@ -433,6 +746,10 @@ class _ProductDetailsScreenState
 
             if (_canEditProduct)
               const SizedBox(height: 12),
+
+            // ==================================================
+            // ADJUST STOCK
+            // ==================================================
 
             if (_canAdjustStock)
               SizedBox(
@@ -447,8 +764,7 @@ class _ProductDetailsScreenState
                   icon: const Icon(
                     Icons.inventory_2,
                   ),
-                  label:
-                      const Text(
+                  label: const Text(
                     'Adjust Stock',
                   ),
                 ),
@@ -457,9 +773,14 @@ class _ProductDetailsScreenState
             if (_canAdjustStock)
               const SizedBox(height: 12),
 
+            // ==================================================
+            // DELETE PRODUCT
+            // ==================================================
+
             if (_canDeleteProduct)
               SizedBox(
                 width: double.infinity,
+                height: 52,
                 child:
                     OutlinedButton.icon(
                   onPressed:
@@ -490,7 +811,7 @@ class _ProductDetailsScreenState
               const SizedBox(height: 24),
 
             // ==================================================
-            // PRODUCT INFORMATION
+            // PRODUCT ID
             // ==================================================
 
             _buildInfoCard(
@@ -500,12 +821,20 @@ class _ProductDetailsScreenState
                   _currentProduct.id,
             ),
 
+            // ==================================================
+            // CATEGORY
+            // ==================================================
+
             _buildInfoCard(
               icon: Icons.category,
               title: 'Category',
               value:
                   _currentProduct.category,
             ),
+
+            // ==================================================
+            // SELLING PRICE
+            // ==================================================
 
             _buildInfoCard(
               icon: Icons.sell,
@@ -516,18 +845,24 @@ class _ProductDetailsScreenState
               ),
             ),
 
-            // Cost price should not be shown
-            // to buyers.
+            // ==================================================
+            // COST PRICE
+            // ==================================================
 
             if (!_isBuyer)
               _buildInfoCard(
-                icon: Icons.shopping_cart,
+                icon:
+                    Icons.shopping_cart,
                 title: 'Cost Price',
                 value: _formatPrice(
                   _currentProduct
                       .costPrice,
                 ),
               ),
+
+            // ==================================================
+            // STOCK
+            // ==================================================
 
             _buildInfoCard(
               icon: Icons.inventory,
@@ -537,15 +872,25 @@ class _ProductDetailsScreenState
                       .toString(),
             ),
 
+            // ==================================================
+            // PROFIT
+            // ==================================================
+
             if (!_isBuyer)
               _buildInfoCard(
-                icon: Icons.trending_up,
-                title: 'Profit Per Unit',
+                icon:
+                    Icons.trending_up,
+                title:
+                    'Profit Per Unit',
                 value: _formatPrice(
                   _currentProduct
                       .profit,
                 ),
               ),
+
+            // ==================================================
+            // STOCK STATUS
+            // ==================================================
 
             _buildInfoCard(
               icon: _currentProduct
@@ -565,13 +910,13 @@ class _ProductDetailsScreenState
 
             if (_currentProduct
                 .description
+                .trim()
                 .isNotEmpty) ...[
               const SizedBox(height: 8),
 
               const Text(
                 'Description',
-                style:
-                    TextStyle(
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight:
                       FontWeight.bold,
@@ -592,11 +937,14 @@ class _ProductDetailsScreenState
                     style:
                         const TextStyle(
                       fontSize: 16,
+                      height: 1.5,
                     ),
                   ),
                 ),
               ),
             ],
+
+            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -627,11 +975,21 @@ class _ProductDetailsScreenState
                 FontWeight.bold,
           ),
         ),
-        trailing: Text(
-          value,
-          style:
-              const TextStyle(
-            fontSize: 16,
+        trailing: ConstrainedBox(
+          constraints:
+              const BoxConstraints(
+            maxWidth: 220,
+          ),
+          child: Text(
+            value,
+            textAlign:
+                TextAlign.end,
+            overflow:
+                TextOverflow.ellipsis,
+            style:
+                const TextStyle(
+              fontSize: 16,
+            ),
           ),
         ),
       ),

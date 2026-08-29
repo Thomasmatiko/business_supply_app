@@ -1,3 +1,6 @@
+
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../app/routes.dart';
@@ -31,6 +34,7 @@ class _PublicProductsScreenState
   @override
   void initState() {
     super.initState();
+
     _loadProducts();
 
     _searchController.addListener(
@@ -43,7 +47,9 @@ class _PublicProductsScreenState
     _searchController.removeListener(
       _filterProducts,
     );
+
     _searchController.dispose();
+
     super.dispose();
   }
 
@@ -82,6 +88,10 @@ class _PublicProductsScreenState
         _errorMessage =
             'Failed to load products. Please try again.';
       });
+
+      debugPrint(
+        'Public products loading error: $e',
+      );
     }
   }
 
@@ -91,8 +101,12 @@ class _PublicProductsScreenState
 
   List<String> get _categories {
     final categories = _allProducts
-        .map((product) => product.category.trim())
-        .where((category) => category.isNotEmpty)
+        .map(
+          (product) => product.category.trim(),
+        )
+        .where(
+          (category) => category.isNotEmpty,
+        )
         .toSet()
         .toList();
 
@@ -112,19 +126,26 @@ class _PublicProductsScreenState
     final search =
         _searchController.text.trim().toLowerCase();
 
-    final filtered = _allProducts.where((product) {
+    final filtered =
+        _allProducts.where((product) {
       final matchesSearch =
-          product.name.toLowerCase().contains(search) ||
-          product.category.toLowerCase().contains(search) ||
-          product.description
-              .toLowerCase()
-              .contains(search);
+          product.name
+                  .toLowerCase()
+                  .contains(search) ||
+              product.category
+                  .toLowerCase()
+                  .contains(search) ||
+              product.description
+                  .toLowerCase()
+                  .contains(search);
 
       final matchesCategory =
           _selectedCategory == 'All' ||
-              product.category == _selectedCategory;
+              product.category ==
+                  _selectedCategory;
 
-      return matchesSearch && matchesCategory;
+      return matchesSearch &&
+          matchesCategory;
     }).toList();
 
     if (!mounted) {
@@ -149,12 +170,16 @@ class _PublicProductsScreenState
 
     final formatted = <String>[];
 
-    for (int i = 0; i < reversed.length; i++) {
+    for (int i = 0;
+        i < reversed.length;
+        i++) {
       if (i > 0 && i % 3 == 0) {
         formatted.add(',');
       }
 
-      formatted.add(reversed[i]);
+      formatted.add(
+        reversed[i],
+      );
     }
 
     return formatted.reversed.join();
@@ -184,10 +209,11 @@ class _PublicProductsScreenState
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: _isLoading
-                ? null
-                : _loadProducts,
-            icon: const Icon(Icons.refresh),
+            onPressed:
+                _isLoading ? null : _loadProducts,
+            icon: const Icon(
+              Icons.refresh,
+            ),
           ),
         ],
       ),
@@ -212,7 +238,9 @@ class _PublicProductsScreenState
         children: [
           SizedBox(
             height:
-                MediaQuery.of(context).size.height *
+                MediaQuery.of(context)
+                        .size
+                        .height *
                     0.35,
           ),
           Center(
@@ -225,17 +253,24 @@ class _PublicProductsScreenState
                     Icons.error_outline,
                     size: 60,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(
+                    height: 16,
+                  ),
                   Text(
                     _errorMessage!,
                     textAlign:
                         TextAlign.center,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(
+                    height: 20,
+                  ),
                   FilledButton(
-                    onPressed: _loadProducts,
+                    onPressed:
+                        _loadProducts,
                     child:
-                        const Text('Try Again'),
+                        const Text(
+                      'Try Again',
+                    ),
                   ),
                 ],
               ),
@@ -248,24 +283,17 @@ class _PublicProductsScreenState
     return ListView(
       physics:
           const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(16),
+      padding:
+          const EdgeInsets.all(16),
       children: [
         _buildHeader(),
-
         const SizedBox(height: 16),
-
         _buildSearchField(),
-
         const SizedBox(height: 16),
-
         _buildCategoryFilter(),
-
         const SizedBox(height: 20),
-
         _buildProductCount(),
-
         const SizedBox(height: 12),
-
         _buildProducts(),
       ],
     );
@@ -284,7 +312,8 @@ class _PublicProductsScreenState
           'Find Products',
           style: TextStyle(
             fontSize: 28,
-            fontWeight: FontWeight.bold,
+            fontWeight:
+                FontWeight.bold,
           ),
         ),
         const SizedBox(height: 6),
@@ -315,13 +344,17 @@ class _PublicProductsScreenState
         prefixIcon:
             const Icon(Icons.search),
         suffixIcon:
-            _searchController.text.isNotEmpty
+            _searchController.text
+                    .isNotEmpty
                 ? IconButton(
                     onPressed: () {
-                      _searchController.clear();
+                      _searchController
+                          .clear();
                     },
                     icon:
-                        const Icon(Icons.clear),
+                        const Icon(
+                      Icons.clear,
+                    ),
                   )
                 : null,
         border:
@@ -335,17 +368,26 @@ class _PublicProductsScreenState
   // ============================================================
 
   Widget _buildCategoryFilter() {
-    final categories = _categories;
+    final categories =
+        _categories;
 
     return SizedBox(
       height: 46,
       child: ListView.separated(
         scrollDirection:
             Axis.horizontal,
-        itemCount: categories.length,
+        itemCount:
+            categories.length,
+
+        // FIXED:
+        // The previous code used (_, _) which
+        // declared the same parameter twice.
         separatorBuilder:
-            (_, _) =>
-    const SizedBox(width: 8),
+            (context, index) =>
+                const SizedBox(
+          width: 8,
+        ),
+
         itemBuilder:
             (context, index) {
           final category =
@@ -358,8 +400,13 @@ class _PublicProductsScreenState
           return ChoiceChip(
             label:
                 Text(category),
-            selected: selected,
-            onSelected: (_) {
+            selected:
+                selected,
+            onSelected: (selected) {
+              if (!selected) {
+                return;
+              }
+
               setState(() {
                 _selectedCategory =
                     category;
@@ -380,8 +427,10 @@ class _PublicProductsScreenState
   Widget _buildProductCount() {
     return Text(
       '${_filteredProducts.length} product${_filteredProducts.length == 1 ? '' : 's'} found',
-      style: const TextStyle(
-        fontWeight: FontWeight.w600,
+      style:
+          const TextStyle(
+        fontWeight:
+            FontWeight.w600,
       ),
     );
   }
@@ -405,7 +454,9 @@ class _PublicProductsScreenState
               bottom: 12,
             ),
             child:
-                _buildProductCard(product),
+                _buildProductCard(
+              product,
+            ),
           );
         },
       ).toList(),
@@ -442,7 +493,9 @@ class _PublicProductsScreenState
                 product,
               ),
 
-              const SizedBox(width: 14),
+              const SizedBox(
+                width: 14,
+              ),
 
               Expanded(
                 child: Column(
@@ -527,8 +580,7 @@ class _PublicProductsScreenState
               ),
 
               const Icon(
-                Icons
-                    .arrow_forward_ios,
+                Icons.arrow_forward_ios,
                 size: 18,
               ),
             ],
@@ -539,25 +591,58 @@ class _PublicProductsScreenState
   }
 
   // ============================================================
-  // PRODUCT ICON
+  // PRODUCT IMAGE
   // ============================================================
 
   Widget _buildProductIcon(
     Product product,
   ) {
+    final imagePath =
+        product.imagePath?.trim();
+
     return Container(
       width: 72,
       height: 72,
-      decoration: BoxDecoration(
+      clipBehavior:
+          Clip.antiAlias,
+      decoration:
+          BoxDecoration(
         borderRadius:
             BorderRadius.circular(14),
         color: Theme.of(context)
             .colorScheme
             .surfaceContainerHighest,
       ),
-      child: const Icon(
+      child: imagePath != null &&
+              imagePath.isNotEmpty
+          ? Image.file(
+              File(imagePath),
+              fit: BoxFit.cover,
+              errorBuilder:
+                  (
+                context,
+                error,
+                stackTrace,
+              ) {
+                return _buildProductPlaceholder();
+              },
+            )
+          : _buildProductPlaceholder(),
+    );
+  }
+
+  // ============================================================
+  // PRODUCT IMAGE PLACEHOLDER
+  // ============================================================
+
+  Widget _buildProductPlaceholder() {
+    return Center(
+      child: Icon(
         Icons.inventory_2,
         size: 34,
+        color: Theme.of(context)
+            .colorScheme
+            .onSurfaceVariant,
       ),
     );
   }
@@ -607,7 +692,8 @@ class _PublicProductsScreenState
                   'All')
             OutlinedButton(
               onPressed: () {
-                _searchController.clear();
+                _searchController
+                    .clear();
 
                 setState(() {
                   _selectedCategory =
@@ -626,3 +712,4 @@ class _PublicProductsScreenState
     );
   }
 }
+

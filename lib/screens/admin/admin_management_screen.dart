@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../models/user.dart';
+import '../../services/admin_service.dart';
 import '../../services/auth_service.dart';
-import '../../services/user_service.dart';
+
 
 class AdminManagementScreen extends StatefulWidget {
   const AdminManagementScreen({super.key});
@@ -14,10 +15,11 @@ class AdminManagementScreen extends StatefulWidget {
 
 class _AdminManagementScreenState
     extends State<AdminManagementScreen> {
-  final UserService _userService = UserService.instance;
+
+  final AdminService _adminService = AdminService.instance;
   final AuthService _authService = AuthService.instance;
 
-  List<AppUser> _users = <AppUser>[];
+  List<AppUser> _users = [];
   bool _isLoading = true;
   String _searchQuery = '';
 
@@ -39,8 +41,7 @@ class _AdminManagementScreenState
     }
 
     try {
-      final List<AppUser> users =
-          await _userService.getUsers();
+      final users = await _adminService.getAllUsers();
 
       if (!mounted) {
         return;
@@ -71,27 +72,71 @@ class _AdminManagementScreenState
   // ============================================================
 
   List<AppUser> get _filteredUsers {
-    final String query =
-        _searchQuery.trim().toLowerCase();
+    final query = _searchQuery.trim().toLowerCase();
 
     if (query.isEmpty) {
       return _users;
     }
 
-    return _users.where((AppUser user) {
+    return _users.where((user) {
       return user.name.toLowerCase().contains(query) ||
           user.email.toLowerCase().contains(query) ||
           user.phone.toLowerCase().contains(query) ||
-          user.role.toLowerCase().contains(query);
+          user.role.toLowerCase().contains(query) ||
+          user.adminLevel.toLowerCase().contains(query);
     }).toList();
   }
 
   // ============================================================
-  // PERMISSION
+  // PERMISSIONS
   // ============================================================
 
-  bool get _canManage {
-    return _authService.isLeaderAdmin;
+  bool get _canManageUsers {
+    return _authService.isAdmin;
+  }
+
+  bool _canPromoteUser(AppUser user) {
+    return _authService.canPromoteToAdmin(user);
+  }
+
+  bool _canEditAdmin(AppUser user) {
+    return _authService.canEditAdministrator(user);
+  }
+
+  bool _canRemoveAdmin(AppUser user) {
+    return _authService.canRemoveAdminUser(user);
+  }
+
+  bool _canDeleteUser(AppUser user) {
+    final currentUser = _authService.currentUser;
+
+    if (currentUser == null) {
+      return false;
+    }
+
+    if (!currentUser.isAnyAdmin) {
+      return false;
+    }
+
+    if (user.id == currentUser.id) {
+      return false;
+    }
+
+    if (user.id == AdminService.leaderAdminId) {
+      return false;
+    }
+
+    if (user.isLeaderAdmin) {
+      return false;
+    }
+
+    if (currentUser.isNormalAdmin && user.isAnyAdmin) {
+      return false;
+    }
+
+    return user.isBuyer ||
+        user.isSeller ||
+        (currentUser.isLeaderAdmin && user.isNormalAdmin);
   }
 
   // ============================================================
@@ -106,10 +151,7 @@ class _AdminManagementScreenState
       return;
     }
 
-    final messenger =
-        ScaffoldMessenger.of(context);
-
-    messenger
+    ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
@@ -121,71 +163,7 @@ class _AdminManagementScreenState
   }
 
   // ============================================================
-  // CAN PROMOTE
-  // ============================================================
-
-  bool _canPromoteUser(AppUser user) {
-    if (!_authService.isLeaderAdmin) {
-      return false;
-    }
-
-    if (user.id == _authService.currentUser?.id) {
-      return false;
-    }
-
-    if (user.isLeaderAdmin) {
-      return false;
-    }
-
-    if (user.isAnyAdmin) {
-      return false;
-    }
-
-    return true;
-  }
-
-  // ============================================================
-  // CAN EDIT
-  // ============================================================
-
-  bool _canEditAdmin(AppUser user) {
-    if (!_authService.isLeaderAdmin) {
-      return false;
-    }
-
-    if (user.id == _authService.currentUser?.id) {
-      return false;
-    }
-
-    if (user.isLeaderAdmin) {
-      return false;
-    }
-
-    return user.isNormalAdmin;
-  }
-
-  // ============================================================
-  // CAN REMOVE
-  // ============================================================
-
-  bool _canRemoveAdmin(AppUser user) {
-    if (!_authService.isLeaderAdmin) {
-      return false;
-    }
-
-    if (user.id == _authService.currentUser?.id) {
-      return false;
-    }
-
-    if (user.isLeaderAdmin) {
-      return false;
-    }
-
-    return user.isAnyAdmin;
-  }
-
-  // ============================================================
-  // PROMOTE USER
+  // PROMOTE
   // ============================================================
 
   Future<void> _promoteUser(AppUser user) async {
@@ -197,8 +175,7 @@ class _AdminManagementScreenState
       return;
     }
 
-    final bool confirmed =
-        await _showConfirmationDialog(
+    final confirmed = await _showConfirmationDialog(
       title: 'Promote User',
       message:
           'Promote ${user.name} to Normal Admin?\n\n'
@@ -210,8 +187,21 @@ class _AdminManagementScreenState
       return;
     }
 
+    final currentUser = _authService.currentUser;
+
+    if (currentUser == null) {
+      _showMessage(
+        'Your administrator session is no longer available.',
+        isError: true,
+      );
+      return;
+    }
+
     try {
-      await _userService.promoteToAdmin(user.id);
+      await _adminService.promoteUserToAdmin(
+        currentUser: currentUser,
+        userId: user.id,
+      );
 
       if (!mounted) {
         return;
@@ -247,11 +237,10 @@ class _AdminManagementScreenState
       return;
     }
 
-    final AppUser? result =
-        await Navigator.push<AppUser>(
+    final result = await Navigator.push<AppUser>(
       context,
       MaterialPageRoute<AppUser>(
-        builder: (BuildContext context) {
+        builder: (context) {
           return _EditAdminScreen(user: user);
         },
       ),
@@ -261,8 +250,21 @@ class _AdminManagementScreenState
       return;
     }
 
+    final currentUser = _authService.currentUser;
+
+    if (currentUser == null) {
+      _showMessage(
+        'Your administrator session is no longer available.',
+        isError: true,
+      );
+      return;
+    }
+
     try {
-      await _userService.updateUser(result);
+      await _adminService.updateAdmin(
+        currentUser: currentUser,
+        updatedAdmin: result,
+      );
 
       if (!mounted) {
         return;
@@ -298,13 +300,12 @@ class _AdminManagementScreenState
       return;
     }
 
-    final bool confirmed =
-        await _showConfirmationDialog(
+    final confirmed = await _showConfirmationDialog(
       title: 'Remove Admin Privileges',
       message:
           'Remove administrator privileges from ${user.name}?\n\n'
-          'The account will NOT be deleted. '
-          'The user will remain in the system as a buyer.',
+          'The account will not be deleted. '
+          'The user will become a buyer.',
       confirmText: 'Remove',
       destructive: true,
     );
@@ -313,9 +314,20 @@ class _AdminManagementScreenState
       return;
     }
 
+    final currentUser = _authService.currentUser;
+
+    if (currentUser == null) {
+      _showMessage(
+        'Your administrator session is no longer available.',
+        isError: true,
+      );
+      return;
+    }
+
     try {
-      await _userService.removeAdminPrivileges(
-        user.id,
+      await _adminService.removeAdminPrivileges(
+        currentUser: currentUser,
+        adminId: user.id,
       );
 
       if (!mounted) {
@@ -340,6 +352,84 @@ class _AdminManagementScreenState
   }
 
   // ============================================================
+  // DELETE USER
+  // ============================================================
+
+  Future<void> _deleteUser(AppUser user) async {
+    if (!_canDeleteUser(user)) {
+      _showMessage(
+        'You are not allowed to remove this user.',
+        isError: true,
+      );
+      return;
+    }
+
+    String roleName;
+
+    if (user.isNormalAdmin) {
+      roleName = 'Normal Admin';
+    } else if (user.isSeller) {
+      roleName = 'Seller';
+    } else if (user.isBuyer) {
+      roleName = 'Buyer';
+    } else {
+      roleName = user.role;
+    }
+
+    final confirmed = await _showConfirmationDialog(
+      title: 'Remove User',
+      message:
+          'Are you sure you want to permanently remove '
+          '${user.name}?\n\n'
+          'Role: $roleName\n'
+          'Email: ${user.email}\n\n'
+          'This account will be deleted from the system.',
+      confirmText: 'Remove User',
+      destructive: true,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    final performingUser = _authService.currentUser;
+
+    if (performingUser == null) {
+      _showMessage(
+        'Your administrator session is no longer available.',
+        isError: true,
+      );
+      return;
+    }
+
+    try {
+      await _adminService.deleteUserAsAdmin(
+        targetUserId: user.id,
+        currentUser: performingUser,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      _showMessage(
+        '${user.name} was removed successfully.',
+      );
+
+      await _loadUsers();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      _showMessage(
+        'Failed to remove user: $e',
+        isError: true,
+      );
+    }
+  }
+
+  // ============================================================
   // CONFIRMATION
   // ============================================================
 
@@ -349,10 +439,9 @@ class _AdminManagementScreenState
     required String confirmText,
     bool destructive = false,
   }) async {
-    final bool? result =
-        await showDialog<bool>(
+    final result = await showDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) {
+      builder: (dialogContext) {
         return AlertDialog(
           title: Text(title),
           content: Text(message),
@@ -388,7 +477,7 @@ class _AdminManagementScreenState
 
   @override
   Widget build(BuildContext context) {
-    if (!_canManage) {
+    if (!_canManageUsers) {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Admin Management'),
@@ -397,7 +486,7 @@ class _AdminManagementScreenState
           child: Padding(
             padding: EdgeInsets.all(24),
             child: Text(
-              'You do not have permission to manage administrators.',
+              'You do not have permission to manage users.',
               textAlign: TextAlign.center,
             ),
           ),
@@ -405,8 +494,7 @@ class _AdminManagementScreenState
       );
     }
 
-    final List<AppUser> users =
-        _filteredUsers;
+    final users = _filteredUsers;
 
     return Scaffold(
       appBar: AppBar(
@@ -419,8 +507,7 @@ class _AdminManagementScreenState
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed:
-                _isLoading ? null : _loadUsers,
+            onPressed: _isLoading ? null : _loadUsers,
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -432,8 +519,7 @@ class _AdminManagementScreenState
           Expanded(
             child: _isLoading
                 ? const Center(
-                    child:
-                        CircularProgressIndicator(),
+                    child: CircularProgressIndicator(),
                   )
                 : users.isEmpty
                     ? _buildEmptyState()
@@ -449,10 +535,7 @@ class _AdminManagementScreenState
                           ),
                           itemCount: users.length,
                           itemBuilder:
-                              (
-                            BuildContext context,
-                            int index,
-                          ) {
+                              (context, index) {
                             return _buildUserCard(
                               context,
                               users[index],
@@ -471,19 +554,19 @@ class _AdminManagementScreenState
   // ============================================================
 
   Widget _buildHeader(BuildContext context) {
-    final int leaderCount = _users
-        .where(
-          (AppUser user) =>
-              user.isLeaderAdmin,
-        )
-        .length;
+    final totalUsers = _users.length;
 
-    final int normalAdminCount = _users
-        .where(
-          (AppUser user) =>
-              user.isNormalAdmin,
-        )
-        .length;
+    final buyerCount =
+        _users.where((user) => user.isBuyer).length;
+
+    final sellerCount =
+        _users.where((user) => user.isSeller).length;
+
+    final normalAdminCount =
+        _users.where((user) => user.isNormalAdmin).length;
+
+    final leaderCount =
+        _users.where((user) => user.isLeaderAdmin).length;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -497,7 +580,7 @@ class _AdminManagementScreenState
             CrossAxisAlignment.start,
         children: [
           Text(
-            'Administrator Accounts',
+            'User Management',
             style: Theme.of(context)
                 .textTheme
                 .titleLarge
@@ -507,11 +590,10 @@ class _AdminManagementScreenState
           ),
           const SizedBox(height: 6),
           Text(
-            'Manage normal administrators without deleting '
-            'their accounts or business history.',
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium,
+            _authService.isLeaderAdmin
+                ? 'Manage buyers, sellers, and administrators.'
+                : 'Manage buyers and sellers. '
+                    'Administrators are protected.',
           ),
           const SizedBox(height: 16),
           Row(
@@ -519,21 +601,44 @@ class _AdminManagementScreenState
               Expanded(
                 child: _buildSummaryCard(
                   context,
-                  icon:
-                      Icons.admin_panel_settings,
-                  label: 'Normal Admins',
-                  value:
-                      normalAdminCount.toString(),
+                  icon: Icons.people_outline,
+                  label: 'Total Users',
+                  value: totalUsers.toString(),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _buildSummaryCard(
                   context,
-                  icon: Icons.shield,
-                  label: 'Leader Admins',
+                  icon: Icons.person_outline,
+                  label: 'Buyers',
+                  value: buyerCount.toString(),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSummaryCard(
+                  context,
+                  icon: Icons.storefront_outlined,
+                  label: 'Sellers',
+                  value: sellerCount.toString(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildSummaryCard(
+                  context,
+                  icon:
+                      Icons.admin_panel_settings,
+                  label: 'Admins',
                   value:
-                      leaderCount.toString(),
+                      (normalAdminCount +
+                              leaderCount)
+                          .toString(),
                 ),
               ),
             ],
@@ -553,7 +658,7 @@ class _AdminManagementScreenState
     required String label,
     required String value,
   }) {
-    final Color color =
+    final color =
         Theme.of(context).colorScheme.primary;
 
     return Container(
@@ -580,8 +685,7 @@ class _AdminManagementScreenState
                       .textTheme
                       .titleLarge
                       ?.copyWith(
-                        fontWeight:
-                            FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                       ),
                 ),
                 Text(
@@ -611,7 +715,7 @@ class _AdminManagementScreenState
         8,
       ),
       child: TextField(
-        onChanged: (String value) {
+        onChanged: (value) {
           setState(() {
             _searchQuery = value;
           });
@@ -689,29 +793,34 @@ class _AdminManagementScreenState
     BuildContext context,
     AppUser user,
   ) {
-    final String? currentUserId =
+    final currentUserId =
         _authService.currentUser?.id;
 
-    final bool isCurrentUser =
+    final isCurrentUser =
         user.id == currentUserId;
 
-    final bool isProtected =
-        user.isLeaderAdmin;
+    final isProtected =
+        user.isLeaderAdmin ||
+        user.id == AdminService.leaderAdminId;
 
-    final bool canPromote =
+    final canPromote =
         _canPromoteUser(user);
 
-    final bool canEdit =
+    final canEdit =
         _canEditAdmin(user);
 
-    final bool canRemove =
+    final canRemoveAdmin =
         _canRemoveAdmin(user);
+
+    final canDelete =
+        _canDeleteUser(user);
 
     return Card(
       margin:
           const EdgeInsets.only(bottom: 12),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding:
+            const EdgeInsets.all(14),
         child: Column(
           children: [
             Row(
@@ -776,10 +885,13 @@ class _AdminManagementScreenState
             _buildUserActions(
               context,
               user: user,
+              isCurrentUser: isCurrentUser,
               isProtected: isProtected,
               canPromote: canPromote,
               canEdit: canEdit,
-              canRemove: canRemove,
+              canRemoveAdmin:
+                  canRemoveAdmin,
+              canDelete: canDelete,
             ),
           ],
         ),
@@ -792,7 +904,7 @@ class _AdminManagementScreenState
   // ============================================================
 
   Widget _buildAvatar(AppUser user) {
-    final Color color = user.isLeaderAdmin
+    final color = user.isLeaderAdmin
         ? Colors.deepPurple
         : user.isNormalAdmin
             ? Colors.blue
@@ -802,12 +914,13 @@ class _AdminManagementScreenState
 
     String initial = '?';
 
-    final String trimmedName =
+    final trimmedName =
         user.name.trim();
 
     if (trimmedName.isNotEmpty) {
-      initial =
-          trimmedName.substring(0, 1).toUpperCase();
+      initial = trimmedName
+          .substring(0, 1)
+          .toUpperCase();
     }
 
     return CircleAvatar(
@@ -902,10 +1015,12 @@ class _AdminManagementScreenState
   Widget _buildUserActions(
     BuildContext context, {
     required AppUser user,
+    required bool isCurrentUser,
     required bool isProtected,
     required bool canPromote,
     required bool canEdit,
-    required bool canRemove,
+    required bool canRemoveAdmin,
+    required bool canDelete,
   }) {
     if (isProtected) {
       return Row(
@@ -918,7 +1033,7 @@ class _AdminManagementScreenState
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Leader Admin is protected.',
+              'Leader Admin is permanently protected.',
               style: TextStyle(
                 color: Colors.grey.shade700,
                 fontSize: 13,
@@ -929,64 +1044,175 @@ class _AdminManagementScreenState
       );
     }
 
-    if (canPromote) {
-      return SizedBox(
-        width: double.infinity,
-        child: FilledButton.icon(
-          onPressed: () {
-            _promoteUser(user);
-          },
-          icon: const Icon(
-            Icons.admin_panel_settings_outlined,
-          ),
-          label: const Text(
-            'Promote to Normal Admin',
-          ),
-        ),
-      );
-    }
-
-    if (canEdit || canRemove) {
+    if (isCurrentUser) {
       return Row(
         children: [
-          if (canEdit)
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  _editAdmin(user);
-                },
-                icon: const Icon(
-                  Icons.edit_outlined,
-                ),
-                label:
-                    const Text('Edit'),
+          const Icon(
+            Icons.person_outline,
+            size: 18,
+            color: Colors.grey,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'You cannot remove your own account.',
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: 13,
               ),
             ),
-          if (canEdit && canRemove)
-            const SizedBox(width: 10),
-          if (canRemove)
-            Expanded(
-              child: OutlinedButton.icon(
-                style:
-                    OutlinedButton.styleFrom(
-                  foregroundColor:
-                      Colors.red,
-                ),
-                onPressed: () {
-                  _removeAdmin(user);
-                },
-                icon: const Icon(
-                  Icons.remove_circle_outline,
-                ),
-                label: const Text(
-                  'Remove Admin',
-                ),
-              ),
-            ),
+          ),
         ],
       );
     }
 
+    // ----------------------------------------------------------
+    // BUYER / SELLER
+    // ----------------------------------------------------------
+
+    if (!user.isAnyAdmin) {
+      final actions = <Widget>[];
+
+      if (canPromote) {
+        actions.add(
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: () {
+                _promoteUser(user);
+              },
+              icon: const Icon(
+                Icons.admin_panel_settings_outlined,
+              ),
+              label: const Text(
+                'Promote to Admin',
+              ),
+            ),
+          ),
+        );
+      }
+
+      if (canPromote && canDelete) {
+        actions.add(
+          const SizedBox(width: 10),
+        );
+      }
+
+      if (canDelete) {
+        actions.add(
+          Expanded(
+            child: OutlinedButton.icon(
+              style:
+                  OutlinedButton.styleFrom(
+                foregroundColor: Colors.red,
+              ),
+              onPressed: () {
+                _deleteUser(user);
+              },
+              icon: const Icon(
+                Icons.delete_outline,
+              ),
+              label: const Text(
+                'Remove User',
+              ),
+            ),
+          ),
+        );
+      }
+
+      if (actions.isNotEmpty) {
+        return Row(
+          children: actions,
+        );
+      }
+
+      return _noActionMessage();
+    }
+
+    // ----------------------------------------------------------
+    // NORMAL ADMIN
+    // ----------------------------------------------------------
+
+    if (user.isNormalAdmin) {
+      final actions = <Widget>[];
+
+      if (canEdit) {
+        actions.add(
+          OutlinedButton.icon(
+            onPressed: () {
+              _editAdmin(user);
+            },
+            icon: const Icon(
+              Icons.edit_outlined,
+            ),
+            label: const Text('Edit'),
+          ),
+        );
+      }
+
+      if (canRemoveAdmin) {
+        if (actions.isNotEmpty) {
+          actions.add(
+            const SizedBox(width: 8),
+          );
+        }
+
+        actions.add(
+          OutlinedButton.icon(
+            style:
+                OutlinedButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            onPressed: () {
+              _removeAdmin(user);
+            },
+            icon: const Icon(
+              Icons.remove_circle_outline,
+            ),
+            label:
+                const Text('Remove Admin'),
+          ),
+        );
+      }
+
+      if (canDelete) {
+        if (actions.isNotEmpty) {
+          actions.add(
+            const SizedBox(width: 8),
+          );
+        }
+
+        actions.add(
+          OutlinedButton.icon(
+            style:
+                OutlinedButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            onPressed: () {
+              _deleteUser(user);
+            },
+            icon: const Icon(
+              Icons.delete_outline,
+            ),
+            label: const Text('Delete'),
+          ),
+        );
+      }
+
+      if (actions.isNotEmpty) {
+        return SingleChildScrollView(
+          scrollDirection:
+              Axis.horizontal,
+          child: Row(
+            children: actions,
+          ),
+        );
+      }
+    }
+
+    return _noActionMessage();
+  }
+
+  Widget _noActionMessage() {
     return Row(
       children: [
         const Icon(
@@ -997,7 +1223,9 @@ class _AdminManagementScreenState
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            'No administrator actions available.',
+            _authService.isNormalAdmin
+                ? 'Normal Admins cannot manage other administrators.'
+                : 'No actions available.',
             style: TextStyle(
               color: Colors.grey.shade700,
               fontSize: 13,
@@ -1009,9 +1237,9 @@ class _AdminManagementScreenState
   }
 }
 
-// ============================================================
+// ==================================================================
 // EDIT ADMIN SCREEN
-// ============================================================
+// ==================================================================
 
 class _EditAdminScreen extends StatefulWidget {
   final AppUser user;
@@ -1027,7 +1255,7 @@ class _EditAdminScreen extends StatefulWidget {
 
 class _EditAdminScreenState
     extends State<_EditAdminScreen> {
-  final GlobalKey<FormState> _formKey =
+  final _formKey =
       GlobalKey<FormState>();
 
   late final TextEditingController
@@ -1064,6 +1292,7 @@ class _EditAdminScreenState
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+
     super.dispose();
   }
 
@@ -1076,24 +1305,26 @@ class _EditAdminScreenState
       return;
     }
 
-    final AppUser updatedUser =
+    final updatedUser =
         widget.user.copyWith(
       name: _nameController.text.trim(),
-      email:
-          _emailController.text.trim().toLowerCase(),
+      email: _emailController.text
+          .trim()
+          .toLowerCase(),
       phone: _phoneController.text.trim(),
     );
 
-    Navigator.of(context).pop(
-      updatedUser,
-    );
+    Navigator.of(context)
+        .pop(updatedUser);
   }
 
   // ============================================================
-  // NAME VALIDATOR
+  // VALIDATORS
   // ============================================================
 
-  String? _validateName(String? value) {
+  String? _validateName(
+    String? value,
+  ) {
     if (value == null ||
         value.trim().isEmpty) {
       return 'Please enter the name';
@@ -1106,20 +1337,17 @@ class _EditAdminScreenState
     return null;
   }
 
-  // ============================================================
-  // EMAIL VALIDATOR
-  // ============================================================
-
-  String? _validateEmail(String? value) {
+  String? _validateEmail(
+    String? value,
+  ) {
     if (value == null ||
         value.trim().isEmpty) {
       return 'Please enter the email';
     }
 
-    final String email =
-        value.trim();
+    final email = value.trim();
 
-    final RegExp regex = RegExp(
+    final regex = RegExp(
       r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
     );
 
@@ -1130,11 +1358,9 @@ class _EditAdminScreenState
     return null;
   }
 
-  // ============================================================
-  // PHONE VALIDATOR
-  // ============================================================
-
-  String? _validatePhone(String? value) {
+  String? _validatePhone(
+    String? value,
+  ) {
     if (value == null ||
         value.trim().isEmpty) {
       return 'Please enter the phone number';
@@ -1152,11 +1378,14 @@ class _EditAdminScreenState
   // ============================================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return Scaffold(
       appBar: AppBar(
-        title:
-            const Text('Edit Administrator'),
+        title: const Text(
+          'Edit Administrator',
+        ),
       ),
       body: SafeArea(
         child: Form(
@@ -1183,13 +1412,10 @@ class _EditAdminScreenState
                     ),
               ),
               const SizedBox(height: 8),
-              Text(
+              const Text(
                 'Update the administrator account information.',
                 textAlign:
                     TextAlign.center,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium,
               ),
               const SizedBox(height: 32),
               TextFormField(
@@ -1201,7 +1427,8 @@ class _EditAdminScreenState
                     _validateName,
                 decoration:
                     const InputDecoration(
-                  labelText: 'Full Name',
+                  labelText:
+                      'Full Name',
                   prefixIcon: Icon(
                     Icons.person_outline,
                   ),
@@ -1212,7 +1439,8 @@ class _EditAdminScreenState
                 controller:
                     _emailController,
                 keyboardType:
-                    TextInputType.emailAddress,
+                    TextInputType
+                        .emailAddress,
                 textInputAction:
                     TextInputAction.next,
                 validator:

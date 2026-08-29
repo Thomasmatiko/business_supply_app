@@ -1,8 +1,13 @@
+
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../app/routes.dart';
 import '../../models/product.dart';
 import '../../services/auth_service.dart';
+import '../../services/cart_service.dart';
+import '../buyer/cart_screen.dart';
 
 class PublicProductDetailsScreen extends StatelessWidget {
   final Product product;
@@ -18,28 +23,31 @@ class PublicProductDetailsScreen extends StatelessWidget {
 
   String _formatCurrency(double amount) {
     final amountString = amount.toStringAsFixed(0);
+
     final reversed = amountString.split('').reversed.toList();
 
-    final formatted = <String>[];
+    final buffer = StringBuffer();
 
     for (int i = 0; i < reversed.length; i++) {
       if (i > 0 && i % 3 == 0) {
-        formatted.add(',');
+        buffer.write(',');
       }
 
-      formatted.add(reversed[i]);
+      buffer.write(reversed[i]);
     }
 
-    return formatted.reversed.join();
+    return buffer.toString().split('').reversed.join();
   }
 
   // ============================================================
-  // PLACE ORDER
+  // ADD TO CART
   // ============================================================
 
-  void _placeOrder(BuildContext context) {
+  Future<void> _addToCart(
+    BuildContext context,
+  ) async {
     // ----------------------------------------------------------
-    // PRODUCT OUT OF STOCK
+    // CHECK STOCK
     // ----------------------------------------------------------
 
     if (product.stock <= 0) {
@@ -58,19 +66,97 @@ class PublicProductDetailsScreen extends StatelessWidget {
     // CHECK LOGIN
     // ----------------------------------------------------------
 
-    if (!AuthService.instance.isLoggedIn) {
+    final authService = AuthService.instance;
+    final user = authService.currentUser;
+
+    if (user == null) {
       _showLoginRequired(context);
       return;
     }
 
     // ----------------------------------------------------------
-    // USER IS LOGGED IN
+    // CHECK BUYER ROLE
     // ----------------------------------------------------------
 
-    Navigator.pushNamed(
-      context,
-      AppRoutes.createOrder,
-      arguments: product,
+    if (!user.isBuyer) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Only buyers can add products to cart.',
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // ADD TO CART
+    // ----------------------------------------------------------
+
+    try {
+      final success = await CartService.instance.addToCart(
+        buyerId: user.id,
+        productId: product.id,
+        quantity: 1,
+      );
+
+      if (!context.mounted) {
+        return;
+      }
+
+      if (success) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(
+                '${product.name} added to cart.',
+              ),
+              action: SnackBarAction(
+                label: 'VIEW CART',
+                onPressed: () {
+                  _openCart(context);
+                },
+              ),
+            ),
+          );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to add product to cart. '
+              'The requested quantity may exceed available stock.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error adding product to cart: $e',
+          ),
+        ),
+      );
+    }
+  }
+
+  // ============================================================
+  // OPEN CART
+  // ============================================================
+
+  void _openCart(
+    BuildContext context,
+  ) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const CartScreen(),
+      ),
     );
   }
 
@@ -78,7 +164,9 @@ class PublicProductDetailsScreen extends StatelessWidget {
   // LOGIN REQUIRED
   // ============================================================
 
-  void _showLoginRequired(BuildContext context) {
+  void _showLoginRequired(
+    BuildContext context,
+  ) {
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -88,9 +176,13 @@ class PublicProductDetailsScreen extends StatelessWidget {
           ),
           content: const Text(
             'You can browse products without an account. '
-            'Please login or create an account before placing an order.',
+            'Please login or create an account before adding products to your cart.',
           ),
           actions: [
+            // --------------------------------------------------
+            // CANCEL
+            // --------------------------------------------------
+
             TextButton(
               onPressed: () {
                 Navigator.pop(dialogContext);
@@ -99,6 +191,10 @@ class PublicProductDetailsScreen extends StatelessWidget {
                 'Cancel',
               ),
             ),
+
+            // --------------------------------------------------
+            // REGISTER
+            // --------------------------------------------------
 
             OutlinedButton(
               onPressed: () {
@@ -113,6 +209,10 @@ class PublicProductDetailsScreen extends StatelessWidget {
                 'Register',
               ),
             ),
+
+            // --------------------------------------------------
+            // LOGIN
+            // --------------------------------------------------
 
             FilledButton(
               onPressed: () {
@@ -134,19 +234,102 @@ class PublicProductDetailsScreen extends StatelessWidget {
   }
 
   // ============================================================
+  // PRODUCT IMAGE
+  // ============================================================
+
+  Widget _buildProductImage(
+    BuildContext context,
+  ) {
+    final imagePath = product.imagePath?.trim();
+
+    // ----------------------------------------------------------
+    // NO IMAGE
+    // ----------------------------------------------------------
+
+    if (imagePath == null || imagePath.isEmpty) {
+      return _buildProductPlaceholder(context);
+    }
+
+    // ----------------------------------------------------------
+    // IMAGE
+    // ----------------------------------------------------------
+
+    return Image.file(
+      File(imagePath),
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      errorBuilder: (
+        context,
+        error,
+        stackTrace,
+      ) {
+        return _buildProductPlaceholder(context);
+      },
+    );
+  }
+
+  // ============================================================
+  // PRODUCT IMAGE PLACEHOLDER
+  // ============================================================
+
+  Widget _buildProductPlaceholder(
+    BuildContext context,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: colorScheme.primaryContainer,
+      child: Center(
+        child: Icon(
+          Icons.inventory_2_outlined,
+          size: 100,
+          color: colorScheme.onPrimaryContainer,
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
   // BUILD
   // ============================================================
 
   @override
   Widget build(BuildContext context) {
     final available = product.stock > 0;
-    final isLoggedIn = AuthService.instance.isLoggedIn;
+
+    final authService = AuthService.instance;
+
+    final isLoggedIn = authService.isLoggedIn;
+
+    final currentUser = authService.currentUser;
+
+    final isBuyer = currentUser?.isBuyer ?? false;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(
           'Product Details',
         ),
+
+        // ------------------------------------------------------
+        // CART BUTTON
+        // ------------------------------------------------------
+
+        actions: [
+          if (isBuyer)
+            IconButton(
+              onPressed: () {
+                _openCart(context);
+              },
+              tooltip: 'My Cart',
+              icon: const Icon(
+                Icons.shopping_cart_outlined,
+              ),
+            ),
+        ],
       ),
 
       body: SingleChildScrollView(
@@ -154,33 +337,28 @@ class PublicProductDetailsScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ====================================================
-            // PRODUCT IMAGE / ICON
-            // ====================================================
+            // ==================================================
+            // PRODUCT IMAGE
+            // ==================================================
 
             Container(
               width: double.infinity,
               height: 240,
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
                 color: Theme.of(context)
                     .colorScheme
                     .surfaceContainerHighest,
               ),
-              child: Icon(
-                Icons.inventory_2_outlined,
-                size: 100,
-                color: Theme.of(context)
-                    .colorScheme
-                    .primary,
-              ),
+              child: _buildProductImage(context),
             ),
 
             const SizedBox(height: 24),
 
-            // ====================================================
+            // ==================================================
             // PRODUCT NAME
-            // ====================================================
+            // ==================================================
 
             Text(
               product.name,
@@ -190,13 +368,13 @@ class PublicProductDetailsScreen extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
-            // ====================================================
+            // ==================================================
             // CATEGORY
-            // ====================================================
+            // ==================================================
 
-            if (product.category.isNotEmpty)
+            if (product.category.trim().isNotEmpty)
               Chip(
                 avatar: const Icon(
                   Icons.category_outlined,
@@ -209,9 +387,9 @@ class PublicProductDetailsScreen extends StatelessWidget {
 
             const SizedBox(height: 20),
 
-            // ====================================================
+            // ==================================================
             // SELLING PRICE
-            // ====================================================
+            // ==================================================
 
             Text(
               'TZS ${_formatCurrency(product.sellingPrice)}',
@@ -224,11 +402,11 @@ class PublicProductDetailsScreen extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
 
-            // ====================================================
+            // ==================================================
             // AVAILABILITY
-            // ====================================================
+            // ==================================================
 
             Container(
               padding: const EdgeInsets.symmetric(
@@ -238,7 +416,9 @@ class PublicProductDetailsScreen extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 color: available
-                    ? Colors.green.withValues(alpha: 0.10)
+                    ? Colors.green.withValues(
+                        alpha: 0.10,
+                      )
                     : Theme.of(context)
                         .colorScheme
                         .errorContainer,
@@ -273,9 +453,9 @@ class PublicProductDetailsScreen extends StatelessWidget {
 
             const SizedBox(height: 28),
 
-            // ====================================================
+            // ==================================================
             // DESCRIPTION
-            // ====================================================
+            // ==================================================
 
             const Text(
               'Description',
@@ -287,65 +467,92 @@ class PublicProductDetailsScreen extends StatelessWidget {
 
             const SizedBox(height: 8),
 
-            Text(
-              product.description.isNotEmpty
-                  ? product.description
-                  : 'No description available.',
-              style: const TextStyle(
-                fontSize: 16,
-                height: 1.5,
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  product.description.trim().isNotEmpty
+                      ? product.description
+                      : 'No description available.',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    height: 1.5,
+                  ),
+                ),
               ),
             ),
 
             const SizedBox(height: 32),
 
-            // ====================================================
-            // PLACE ORDER BUTTON
-            // ====================================================
+            // ==================================================
+            // ADD TO CART
+            // ==================================================
 
             SizedBox(
               width: double.infinity,
+              height: 52,
               child: FilledButton.icon(
                 onPressed: available
-                    ? () => _placeOrder(context)
+                    ? () {
+                        _addToCart(context);
+                      }
                     : null,
                 icon: const Icon(
-                  Icons.shopping_cart,
+                  Icons.add_shopping_cart,
                 ),
                 label: Text(
                   isLoggedIn
-                      ? 'Place Order'
-                      : 'Login to Place Order',
+                      ? 'Add to Cart'
+                      : 'Login to Add to Cart',
                 ),
               ),
             ),
 
-            // ====================================================
-            // PUBLIC USER INFORMATION
-            // ====================================================
+            const SizedBox(height: 12),
 
-            if (!isLoggedIn)
-              const Padding(
-                padding: EdgeInsets.only(
-                  top: 12,
+            // ==================================================
+            // VIEW CART
+            // ==================================================
+
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: OutlinedButton.icon(
+                onPressed: isBuyer
+                    ? () {
+                        _openCart(context);
+                      }
+                    : null,
+                icon: const Icon(
+                  Icons.shopping_cart_outlined,
                 ),
-                child: Center(
-                  child: Text(
-                    'Browse freely without an account. '
-                    'Login or register when you want to place an order.',
-                    textAlign: TextAlign.center,
-                  ),
+                label: const Text(
+                  'View Cart',
+                ),
+              ),
+            ),
+
+            // ==================================================
+            // PUBLIC USER INFORMATION
+            // ==================================================
+
+            if (!isLoggedIn) ...[
+              const SizedBox(height: 12),
+
+              const Center(
+                child: Text(
+                  'Browse freely without an account. '
+                  'Login or register when you want to add products to your cart.',
+                  textAlign: TextAlign.center,
                 ),
               ),
 
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
 
-            // ====================================================
-            // SELL INFORMATION
-            // ====================================================
-
-            if (!isLoggedIn)
               _buildSellInformation(context),
+            ],
+
+            const SizedBox(height: 20),
           ],
         ),
       ),
@@ -363,8 +570,7 @@ class PublicProductDetailsScreen extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Icon(
               Icons.storefront,
@@ -375,8 +581,7 @@ class PublicProductDetailsScreen extends StatelessWidget {
 
             Expanded(
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     'Want to sell products?',
@@ -414,3 +619,4 @@ class PublicProductDetailsScreen extends StatelessWidget {
     );
   }
 }
+

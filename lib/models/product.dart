@@ -11,6 +11,10 @@ class Product {
   // Nullable so existing products continue working.
   final String? sellerId;
 
+  // Product image path.
+  // Nullable so existing products without images continue working.
+  final String? imagePath;
+
   const Product({
     required this.id,
     required this.name,
@@ -20,15 +24,28 @@ class Product {
     required this.stock,
     this.description = '',
     this.sellerId,
+    this.imagePath,
   });
+
+  // ============================================================
+  // PROFIT
+  // ============================================================
 
   double get profit {
     return sellingPrice - costPrice;
   }
 
+  // ============================================================
+  // LOW STOCK
+  // ============================================================
+
   bool get isLowStock {
     return stock <= 10;
   }
+
+  // ============================================================
+  // COPY WITH
+  // ============================================================
 
   Product copyWith({
     String? id,
@@ -39,6 +56,7 @@ class Product {
     int? stock,
     String? description,
     String? sellerId,
+    String? imagePath,
   }) {
     return Product(
       id: id ?? this.id,
@@ -49,10 +67,16 @@ class Product {
       stock: stock ?? this.stock,
       description: description ?? this.description,
       sellerId: sellerId ?? this.sellerId,
+      imagePath: imagePath ?? this.imagePath,
     );
   }
 
+  // ============================================================
+  // TO MAP
+  //
   // Convert Product to SQLite database format.
+  // ============================================================
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -63,11 +87,19 @@ class Product {
       'stock': stock,
       'description': description,
       'seller_id': sellerId,
+      'image_path': imagePath,
     };
   }
 
+  // ============================================================
+  // FROM MAP
+  //
   // Convert SQLite database data to Product.
-  factory Product.fromMap(Map<String, dynamic> map) {
+  // ============================================================
+
+  factory Product.fromMap(
+    Map<String, dynamic> map,
+  ) {
     return Product(
       id: map['id']?.toString() ?? '',
       name: map['name']?.toString() ?? '',
@@ -80,7 +112,10 @@ class Product {
           (map['stock'] as num?)?.toInt() ?? 0,
       description:
           map['description']?.toString() ?? '',
-      sellerId: map['seller_id']?.toString(),
+      sellerId:
+          map['seller_id']?.toString(),
+      imagePath:
+          map['image_path']?.toString(),
     );
   }
 }

@@ -7,8 +7,7 @@ import '../models/product.dart';
 class DatabaseHelper {
   DatabaseHelper._();
 
-  static final DatabaseHelper instance =
-      DatabaseHelper._();
+  static final DatabaseHelper instance = DatabaseHelper._();
 
   Database? _database;
 
@@ -29,11 +28,16 @@ class DatabaseHelper {
         '========== DATABASE OPEN ERROR ==========',
       );
       debugPrint(e.toString());
+
       debugPrint(
         '========== STACK TRACE ==========',
       );
       debugPrint(stackTrace.toString());
-      debugPrint('=========================================');
+
+      debugPrint(
+        '=========================================',
+      );
+
       rethrow;
     }
   }
@@ -50,17 +54,23 @@ class DatabaseHelper {
       'business_supply_v3.db',
     );
 
-    debugPrint('Database path: $path');
+    debugPrint(
+      'Database path: $path',
+    );
 
     return openDatabase(
       path,
-      version: 10,
+      version: 17,
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
-      onOpen: (db) {
+      onOpen: (db) async {
         debugPrint(
           'Database opened successfully.',
         );
+
+        await _ensureImagePathColumn(db);
+        await _ensurePaymentColumns(db);
+        await _ensureUserProfileImageColumn(db);
       },
     );
   }
@@ -86,22 +96,13 @@ class DatabaseHelper {
         cost_price REAL NOT NULL,
         stock INTEGER NOT NULL,
         description TEXT,
-        seller_id TEXT
+        seller_id TEXT,
+        image_path TEXT
       )
     ''');
 
     // ==========================================================
     // USERS
-    //
-    // role:
-    // buyer
-    // seller
-    // admin
-    //
-    // admin_level:
-    // none
-    // normal
-    // leader
     // ==========================================================
 
     await db.execute('''
@@ -112,17 +113,13 @@ class DatabaseHelper {
         phone TEXT NOT NULL,
         password TEXT NOT NULL,
         role TEXT NOT NULL,
-        admin_level TEXT NOT NULL DEFAULT 'none'
+        admin_level TEXT NOT NULL DEFAULT 'none',
+        profile_image_path TEXT
       )
     ''');
 
     // ==========================================================
     // ORDERS
-    //
-    // Customer relationship has been removed.
-    //
-    // buyer_id  = user who buys
-    // seller_id = owner of the product
     // ==========================================================
 
     await db.execute('''
@@ -133,6 +130,8 @@ class DatabaseHelper {
         unit_price REAL NOT NULL,
         total_amount REAL NOT NULL,
         status TEXT NOT NULL,
+        payment_status TEXT NOT NULL DEFAULT 'pending',
+        payment_id TEXT,
         created_by TEXT NOT NULL,
         created_at TEXT NOT NULL,
         buyer_id TEXT NOT NULL,
@@ -141,13 +140,49 @@ class DatabaseHelper {
     ''');
 
     // ==========================================================
+    // CART ITEMS
+    // ==========================================================
+
+    await db.execute('''
+      CREATE TABLE cart_items (
+        id TEXT PRIMARY KEY,
+        buyer_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        seller_id TEXT NOT NULL,
+        product_name TEXT NOT NULL,
+        unit_price REAL NOT NULL,
+        quantity INTEGER NOT NULL,
+        image_path TEXT
+      )
+    ''');
+
+    // ==========================================================
+    // PAYMENTS
+    // ==========================================================
+
+    await db.execute('''
+      CREATE TABLE payments (
+        id TEXT PRIMARY KEY,
+        order_id TEXT NOT NULL,
+        buyer_id TEXT NOT NULL,
+        amount REAL NOT NULL,
+        payment_method TEXT NOT NULL,
+        status TEXT NOT NULL,
+        transaction_reference TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        paid_at TEXT
+      )
+    ''');
+
+    // ==========================================================
     // INITIAL PRODUCTS
     // ==========================================================
 
-    await _insertInitialProducts(db);
+    await _insertMissingInitialProducts(db);
 
     // ==========================================================
-    // PERMANENT LEADER ADMIN
+    // LEADER ADMIN
     // ==========================================================
 
     await _insertLeaderAdmin(db);
@@ -162,9 +197,12 @@ class DatabaseHelper {
     int oldVersion,
     int newVersion,
   ) async {
+    debugPrint(
+      'Database upgrade: $oldVersion -> $newVersion',
+    );
+
     // ==========================================================
     // VERSION 2
-    // Standardize products table
     // ==========================================================
 
     if (oldVersion < 2) {
@@ -209,14 +247,14 @@ class DatabaseHelper {
         ALTER TABLE products_new
         RENAME TO products
       ''');
+
+      debugPrint(
+        'Version 2 migration completed.',
+      );
     }
 
     // ==========================================================
     // VERSION 3
-    // Customers
-    //
-    // Kept here only for upgrading very old databases.
-    // The customer table is removed in VERSION 10.
     // ==========================================================
 
     if (oldVersion < 3) {
@@ -230,11 +268,14 @@ class DatabaseHelper {
           business_name TEXT NOT NULL
         )
       ''');
+
+      debugPrint(
+        'Version 3 migration completed.',
+      );
     }
 
     // ==========================================================
     // VERSION 4
-    // Users
     // ==========================================================
 
     if (oldVersion < 4) {
@@ -248,11 +289,14 @@ class DatabaseHelper {
           role TEXT NOT NULL
         )
       ''');
+
+      debugPrint(
+        'Version 4 migration completed.',
+      );
     }
 
     // ==========================================================
     // VERSION 5
-    // Orders
     // ==========================================================
 
     if (oldVersion < 5) {
@@ -269,11 +313,14 @@ class DatabaseHelper {
           created_at TEXT NOT NULL
         )
       ''');
+
+      debugPrint(
+        'Version 5 migration completed.',
+      );
     }
 
     // ==========================================================
     // VERSION 6
-    // Product seller + order buyer/seller
     // ==========================================================
 
     if (oldVersion < 6) {
@@ -291,11 +338,14 @@ class DatabaseHelper {
         ALTER TABLE orders
         ADD COLUMN seller_id TEXT
       ''');
+
+      debugPrint(
+        'Version 6 migration completed.',
+      );
     }
 
     // ==========================================================
     // VERSION 7
-    // Admin levels
     // ==========================================================
 
     if (oldVersion < 7) {
@@ -303,20 +353,26 @@ class DatabaseHelper {
         ALTER TABLE users
         ADD COLUMN admin_level TEXT NOT NULL DEFAULT 'none'
       ''');
+
+      debugPrint(
+        'Version 7 migration completed.',
+      );
     }
 
     // ==========================================================
     // VERSION 8
-    // Permanent Leader Admin
     // ==========================================================
 
     if (oldVersion < 8) {
       await _insertLeaderAdmin(db);
+
+      debugPrint(
+        'Version 8 migration completed.',
+      );
     }
 
     // ==========================================================
     // VERSION 9
-    // Assign existing products to Leader Admin
     // ==========================================================
 
     if (oldVersion < 9) {
@@ -331,30 +387,17 @@ class DatabaseHelper {
       debugPrint(
         'Existing products assigned to Leader Admin.',
       );
+
+      debugPrint(
+        'Version 9 migration completed.',
+      );
     }
 
     // ==========================================================
     // VERSION 10
-    //
-    // REMOVE CUSTOMER SYSTEM FROM DATABASE
-    //
-    // Old orders had:
-    //
-    // customer_id
-    //
-    // New orders no longer have customer_id.
-    //
-    // We rebuild the orders table because SQLite does not provide
-    // a simple DROP COLUMN approach that is safe for all versions.
-    //
-    // Existing order information is preserved.
     // ==========================================================
 
     if (oldVersion < 10) {
-      // --------------------------------------------------------
-      // Create new orders table
-      // --------------------------------------------------------
-
       await db.execute('''
         CREATE TABLE orders_new (
           id TEXT PRIMARY KEY,
@@ -369,19 +412,6 @@ class DatabaseHelper {
           seller_id TEXT NOT NULL
         )
       ''');
-
-      // --------------------------------------------------------
-      // Copy existing orders.
-      //
-      // Existing buyer_id/seller_id were introduced in version 6.
-      //
-      // If an old order does not have buyer_id or seller_id,
-      // we use created_by for buyer_id and an empty string for
-      // seller_id.
-      //
-      // Seller ownership can then be corrected from the product
-      // when necessary.
-      // --------------------------------------------------------
 
       await db.execute('''
         INSERT INTO orders_new (
@@ -405,41 +435,29 @@ class DatabaseHelper {
           status,
           created_by,
           created_at,
-          COALESCE(NULLIF(buyer_id, ''), created_by),
-          COALESCE(seller_id, '')
+          COALESCE(
+            NULLIF(buyer_id, ''),
+            created_by
+          ),
+          COALESCE(
+            seller_id,
+            ''
+          )
         FROM orders
       ''');
-
-      // --------------------------------------------------------
-      // Remove old orders table
-      // --------------------------------------------------------
 
       await db.execute(
         'DROP TABLE orders',
       );
-
-      // --------------------------------------------------------
-      // Rename new table
-      // --------------------------------------------------------
 
       await db.execute('''
         ALTER TABLE orders_new
         RENAME TO orders
       ''');
 
-      // --------------------------------------------------------
-      // Remove customers table
-      // --------------------------------------------------------
-
       await db.execute(
         'DROP TABLE IF EXISTS customers',
       );
-
-      // --------------------------------------------------------
-      // Make sure existing orders know their seller.
-      //
-      // seller_id comes from the product.
-      // --------------------------------------------------------
 
       await db.execute('''
         UPDATE orders
@@ -455,21 +473,468 @@ class DatabaseHelper {
       debugPrint(
         'Customer system removed from database.',
       );
+
+      debugPrint(
+        'Version 10 migration completed.',
+      );
+    }
+
+    // ==========================================================
+    // VERSION 11
+    // ==========================================================
+
+    if (oldVersion < 11) {
+      await _insertMissingInitialProducts(db);
+      await _insertLeaderAdmin(db);
+
+      await db.update(
+        'products',
+        {
+          'seller_id': 'ADMIN001',
+        },
+        where: '''
+          seller_id IS NULL
+          OR seller_id = ''
+        ''',
+      );
+
+      debugPrint(
+        'Version 11 migration completed.',
+      );
+    }
+
+    // ==========================================================
+    // VERSION 12
+    // ==========================================================
+
+    if (oldVersion < 12) {
+      await _ensureImagePathColumn(db);
+
+      debugPrint(
+        'Version 12 migration completed.',
+      );
+    }
+
+    // ==========================================================
+    // VERSION 13
+    // ==========================================================
+
+    if (oldVersion < 13) {
+      await _ensureImagePathColumn(db);
+
+      debugPrint(
+        'Version 13 migration completed.',
+      );
+    }
+
+    // ==========================================================
+    // VERSION 14
+    // ==========================================================
+
+    if (oldVersion < 14) {
+      await db.execute('''
+        CREATE TABLE cart_items (
+          id TEXT PRIMARY KEY,
+          buyer_id TEXT NOT NULL,
+          product_id TEXT NOT NULL,
+          seller_id TEXT NOT NULL,
+          product_name TEXT NOT NULL,
+          unit_price REAL NOT NULL,
+          quantity INTEGER NOT NULL,
+          image_path TEXT
+        )
+      ''');
+
+      debugPrint(
+        'Version 14 migration completed.',
+      );
+    }
+
+    // ==========================================================
+    // VERSION 15
+    // PAYMENT SYSTEM
+    // ==========================================================
+
+    if (oldVersion < 15) {
+      await _ensureOrderPaymentColumns(db);
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS payments (
+          id TEXT PRIMARY KEY,
+          order_id TEXT NOT NULL,
+          buyer_id TEXT NOT NULL,
+          amount REAL NOT NULL,
+          method TEXT NOT NULL,
+          status TEXT NOT NULL,
+          transaction_reference TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      ''');
+
+      debugPrint(
+        'Version 15 payment migration completed.',
+      );
+    }
+
+    // ==========================================================
+    // VERSION 16
+    // PAYMENT MANAGEMENT
+    // ==========================================================
+
+    if (oldVersion < 16) {
+      await _migratePaymentsToVersion16(db);
+
+      debugPrint(
+        'Version 16 payment management migration completed.',
+      );
+    }
+
+    // ==========================================================
+    // VERSION 17
+    // USER PROFILE IMAGE
+    // ==========================================================
+
+    if (oldVersion < 17) {
+      await _ensureUserProfileImageColumn(db);
+
+      debugPrint(
+        'Version 17 user profile image migration completed.',
+      );
     }
   }
 
   // ============================================================
-  // INSERT PERMANENT LEADER ADMIN
+  // ENSURE ORDER PAYMENT COLUMNS
+  // ============================================================
+
+  Future<void> _ensureOrderPaymentColumns(
+    Database db,
+  ) async {
+    final columns = await db.rawQuery(
+      'PRAGMA table_info(orders)',
+    );
+
+    final names = columns
+        .map(
+          (column) => column['name']?.toString(),
+        )
+        .whereType<String>()
+        .toSet();
+
+    if (!names.contains('payment_status')) {
+      await db.execute('''
+        ALTER TABLE orders
+        ADD COLUMN payment_status TEXT NOT NULL
+        DEFAULT 'pending'
+      ''');
+    }
+
+    if (!names.contains('payment_id')) {
+      await db.execute('''
+        ALTER TABLE orders
+        ADD COLUMN payment_id TEXT
+      ''');
+    }
+  }
+
+  // ============================================================
+  // VERSION 16 PAYMENT MIGRATION
+  // ============================================================
+
+  Future<void> _migratePaymentsToVersion16(
+    Database db,
+  ) async {
+    final exists = await _tableExists(
+      db,
+      'payments',
+    );
+
+    if (!exists) {
+      await db.execute('''
+        CREATE TABLE payments (
+          id TEXT PRIMARY KEY,
+          order_id TEXT NOT NULL,
+          buyer_id TEXT NOT NULL,
+          amount REAL NOT NULL,
+          payment_method TEXT NOT NULL,
+          status TEXT NOT NULL,
+          transaction_reference TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          paid_at TEXT
+        )
+      ''');
+
+      return;
+    }
+
+    final columns = await db.rawQuery(
+      'PRAGMA table_info(payments)',
+    );
+
+    final names = columns
+        .map(
+          (column) => column['name']?.toString(),
+        )
+        .whereType<String>()
+        .toSet();
+
+    final hasPaymentMethod =
+        names.contains('payment_method');
+
+    final hasMethod =
+        names.contains('method');
+
+    if (!hasPaymentMethod && hasMethod) {
+      await db.execute('''
+        ALTER TABLE payments
+        RENAME TO payments_old
+      ''');
+
+      await db.execute('''
+        CREATE TABLE payments (
+          id TEXT PRIMARY KEY,
+          order_id TEXT NOT NULL,
+          buyer_id TEXT NOT NULL,
+          amount REAL NOT NULL,
+          payment_method TEXT NOT NULL,
+          status TEXT NOT NULL,
+          transaction_reference TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          paid_at TEXT
+        )
+      ''');
+
+      await db.execute('''
+        INSERT INTO payments (
+          id,
+          order_id,
+          buyer_id,
+          amount,
+          payment_method,
+          status,
+          transaction_reference,
+          created_at,
+          updated_at,
+          paid_at
+        )
+        SELECT
+          id,
+          order_id,
+          buyer_id,
+          amount,
+          method,
+          status,
+          transaction_reference,
+          created_at,
+          updated_at,
+          CASE
+            WHEN LOWER(TRIM(status)) = 'completed'
+            THEN updated_at
+            ELSE NULL
+          END
+        FROM payments_old
+      ''');
+
+      await db.execute(
+        'DROP TABLE payments_old',
+      );
+
+      return;
+    }
+
+    if (!hasPaymentMethod && !hasMethod) {
+      await db.execute('''
+        ALTER TABLE payments
+        ADD COLUMN payment_method TEXT NOT NULL
+        DEFAULT 'cash'
+      ''');
+    }
+
+    if (!names.contains('paid_at')) {
+      await db.execute('''
+        ALTER TABLE payments
+        ADD COLUMN paid_at TEXT
+      ''');
+    }
+  }
+
+  // ============================================================
+  // ENSURE PAYMENT COLUMNS
+  // ============================================================
+
+  Future<void> _ensurePaymentColumns(
+    Database db,
+  ) async {
+    if (!await _tableExists(db, 'payments')) {
+      return;
+    }
+
+    final columns = await db.rawQuery(
+      'PRAGMA table_info(payments)',
+    );
+
+    final names = columns
+        .map(
+          (column) => column['name']?.toString(),
+        )
+        .whereType<String>()
+        .toSet();
+
+    if (!names.contains('payment_method')) {
+      if (names.contains('method')) {
+        await db.execute('''
+          ALTER TABLE payments
+          ADD COLUMN payment_method TEXT
+        ''');
+
+        await db.execute('''
+          UPDATE payments
+          SET payment_method = method
+          WHERE payment_method IS NULL
+        ''');
+      } else {
+        await db.execute('''
+          ALTER TABLE payments
+          ADD COLUMN payment_method TEXT NOT NULL
+          DEFAULT 'cash'
+        ''');
+      }
+    }
+
+    if (!names.contains('paid_at')) {
+      await db.execute('''
+        ALTER TABLE payments
+        ADD COLUMN paid_at TEXT
+      ''');
+    }
+  }
+
+  // ============================================================
+  // TABLE EXISTS
+  // ============================================================
+
+  Future<bool> _tableExists(
+    Database db,
+    String table,
+  ) async {
+    final result = await db.rawQuery(
+      '''
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'table'
+      AND name = ?
+      LIMIT 1
+      ''',
+      [table],
+    );
+
+    return result.isNotEmpty;
+  }
+
+  // ============================================================
+  // ENSURE PRODUCT IMAGE PATH COLUMN
+  // ============================================================
+
+  Future<void> _ensureImagePathColumn(
+    Database db,
+  ) async {
+    try {
+      final columns = await db.rawQuery(
+        'PRAGMA table_info(products)',
+      );
+
+      bool imagePathExists = false;
+
+      for (final column in columns) {
+        final name = column['name']?.toString();
+
+        if (name == 'image_path') {
+          imagePathExists = true;
+          break;
+        }
+      }
+
+      if (!imagePathExists) {
+        await db.execute('''
+          ALTER TABLE products
+          ADD COLUMN image_path TEXT
+        ''');
+
+        debugPrint(
+          'image_path column added successfully.',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'Error ensuring image_path column: $e',
+      );
+
+      rethrow;
+    }
+  }
+
+  // ============================================================
+  // ENSURE USER PROFILE IMAGE COLUMN
+  // ============================================================
+
+  Future<void> _ensureUserProfileImageColumn(
+    Database db,
+  ) async {
+    try {
+      if (!await _tableExists(db, 'users')) {
+        return;
+      }
+
+      final columns = await db.rawQuery(
+        'PRAGMA table_info(users)',
+      );
+
+      bool profileImageExists = false;
+
+      for (final column in columns) {
+        final name = column['name']?.toString();
+
+        if (name == 'profile_image_path') {
+          profileImageExists = true;
+          break;
+        }
+      }
+
+      if (!profileImageExists) {
+        await db.execute('''
+          ALTER TABLE users
+          ADD COLUMN profile_image_path TEXT
+        ''');
+
+        debugPrint(
+          'profile_image_path column added successfully.',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'Error ensuring profile_image_path column: $e',
+      );
+
+      rethrow;
+    }
+  }
+
+  // ============================================================
+  // INSERT LEADER ADMIN
   // ============================================================
 
   Future<void> _insertLeaderAdmin(
     Database db,
   ) async {
     const leaderAdminId = 'ADMIN001';
+
     const leaderAdminEmail =
         'thomasmatiko021@gmail.com';
 
-    final existingAdmin = await db.query(
+    final existingById = await db.query(
       'users',
       columns: ['id'],
       where: 'id = ?',
@@ -477,21 +942,33 @@ class DatabaseHelper {
       limit: 1,
     );
 
-    // ==========================================================
-    // ADMIN ALREADY EXISTS
-    // ==========================================================
-
-    if (existingAdmin.isNotEmpty) {
-      debugPrint(
-        'Leader Admin already exists: '
-        '$leaderAdminEmail',
+    if (existingById.isNotEmpty) {
+      await db.update(
+        'users',
+        {
+          'role': 'admin',
+          'admin_level': 'leader',
+        },
+        where: 'id = ?',
+        whereArgs: [leaderAdminId],
       );
+
       return;
     }
 
-    // ==========================================================
-    // CREATE LEADER ADMIN
-    // ==========================================================
+    final existingByEmail = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'LOWER(email) = ?',
+      whereArgs: [
+        leaderAdminEmail.toLowerCase(),
+      ],
+      limit: 1,
+    );
+
+    if (existingByEmail.isNotEmpty) {
+      return;
+    }
 
     await db.insert(
       'users',
@@ -503,12 +980,8 @@ class DatabaseHelper {
         'password': 'Thomas@2023',
         'role': 'admin',
         'admin_level': 'leader',
+        'profile_image_path': null,
       },
-    );
-
-    debugPrint(
-      'Permanent Leader Admin created: '
-      '$leaderAdminEmail',
     );
   }
 
@@ -516,7 +989,7 @@ class DatabaseHelper {
   // INITIAL PRODUCTS
   // ============================================================
 
-  Future<void> _insertInitialProducts(
+  Future<void> _insertMissingInitialProducts(
     Database db,
   ) async {
     final initialProducts = [
@@ -537,7 +1010,8 @@ class DatabaseHelper {
         sellingPrice: 72000,
         costPrice: 65000,
         stock: 5,
-        description: '25kg bag of sugar.',
+        description:
+            '25kg bag of sugar.',
       ),
       Product(
         id: 'PRD003',
@@ -546,7 +1020,8 @@ class DatabaseHelper {
         sellingPrice: 65000,
         costPrice: 58000,
         stock: 35,
-        description: '25kg bag of rice.',
+        description:
+            '25kg bag of rice.',
       ),
       Product(
         id: 'PRD004',
@@ -581,22 +1056,134 @@ class DatabaseHelper {
     ];
 
     for (final product in initialProducts) {
+      final existing = await db.query(
+        'products',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [product.id],
+        limit: 1,
+      );
+
+      if (existing.isNotEmpty) {
+        continue;
+      }
+
       await db.insert(
         'products',
         {
           'id': product.id,
           'name': product.name,
           'category': product.category,
-          'selling_price':
-              product.sellingPrice,
-          'cost_price':
-              product.costPrice,
+          'selling_price': product.sellingPrice,
+          'cost_price': product.costPrice,
           'stock': product.stock,
-          'description':
-              product.description,
+          'description': product.description,
           'seller_id': 'ADMIN001',
+          'image_path': null,
         },
       );
     }
+  }
+
+  // ============================================================
+  // GENERIC DATABASE INSERT
+  // ============================================================
+
+  Future<int> insert(
+    String table,
+    Map<String, dynamic> values,
+  ) async {
+    final db = await database;
+
+    return db.insert(
+      table,
+      values,
+    );
+  }
+
+  // ============================================================
+  // GENERIC DATABASE QUERY
+  // ============================================================
+
+  Future<List<Map<String, dynamic>>> query(
+    String table, {
+    bool? distinct,
+    List<String>? columns,
+    String? where,
+    List<Object?>? whereArgs,
+    String? groupBy,
+    String? having,
+    String? orderBy,
+    int? limit,
+    int? offset,
+  }) async {
+    final db = await database;
+
+    return db.query(
+      table,
+      distinct: distinct,
+      columns: columns,
+      where: where,
+      whereArgs: whereArgs,
+      groupBy: groupBy,
+      having: having,
+      orderBy: orderBy,
+      limit: limit,
+      offset: offset,
+    );
+  }
+
+  // ============================================================
+  // GENERIC DATABASE UPDATE
+  // ============================================================
+
+  Future<int> update(
+    String table,
+    Map<String, dynamic> values, {
+    String? where,
+    List<Object?>? whereArgs,
+  }) async {
+    final db = await database;
+
+    return db.update(
+      table,
+      values,
+      where: where,
+      whereArgs: whereArgs,
+    );
+  }
+
+  // ============================================================
+  // GENERIC DATABASE DELETE
+  // ============================================================
+
+  Future<int> delete(
+    String table, {
+    String? where,
+    List<Object?>? whereArgs,
+  }) async {
+    final db = await database;
+
+    return db.delete(
+      table,
+      where: where,
+      whereArgs: whereArgs,
+    );
+  }
+
+  // ============================================================
+  // RAW QUERY
+  // ============================================================
+
+  Future<List<Map<String, dynamic>>> rawQuery(
+    String sql, [
+    List<Object?>? arguments,
+  ]) async {
+    final db = await database;
+
+    return db.rawQuery(
+      sql,
+      arguments,
+    );
   }
 }

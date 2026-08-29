@@ -1,253 +1,309 @@
+
 import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
+import '../admin/admin_dashboard_screen.dart';
 import '../admin/admin_management_screen.dart';
-import '../dashboard/dashboard_screen.dart';
+import '../orders/orders_screen.dart';
 import '../products/products_screen.dart';
 import '../profile/profile_screen.dart';
-import '../orders/orders_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
   @override
-  State<MainScreen> createState() =>
-      _MainScreenState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
 class _MainScreenState extends State<MainScreen> {
-  final AuthService _authService =
-      AuthService.instance;
-
   int _currentIndex = 0;
-
-  bool _isRefreshingSession = true;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _refreshSession();
-  }
-
-  // ============================================================
-  // REFRESH SESSION
-  // ============================================================
-
-  Future<void> _refreshSession() async {
-    try {
-      await _authService.refreshCurrentUser();
-    } catch (e) {
-      debugPrint(
-        'MainScreen session refresh error: $e',
-      );
-    }
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _isRefreshingSession = false;
-    });
-  }
-
-  // ============================================================
-  // NAVIGATION ITEMS
-  // ============================================================
-
-  List<_NavigationItem> get _navigationItems {
-    final user = _authService.currentUser;
-
-    final items = <_NavigationItem>[
-      const _NavigationItem(
-        label: 'Home',
-        icon: Icons.dashboard_outlined,
-        selectedIcon: Icons.dashboard,
-      ),
-
-      const _NavigationItem(
-        label: 'Products',
-        icon: Icons.inventory_2_outlined,
-        selectedIcon: Icons.inventory_2,
-      ),
-    ];
-
-    // ==========================================================
-    // ORDERS
-    // ==========================================================
-
-    if (_authService.canViewOrders) {
-      items.add(
-        const _NavigationItem(
-          label: 'Orders',
-          icon: Icons.receipt_long_outlined,
-          selectedIcon: Icons.receipt_long,
-        ),
-      );
-    }
-
-    // ==========================================================
-    // PROFILE
-    // ==========================================================
-
-    items.add(
-      const _NavigationItem(
-        label: 'Profile',
-        icon: Icons.person_outline,
-        selectedIcon: Icons.person,
-      ),
-    );
-
-    // ==========================================================
-    // ADMIN MANAGEMENT
-    //
-    // ONLY LEADER ADMIN
-    // ==========================================================
-
-    if (user?.isLeaderAdmin ?? false) {
-      items.add(
-        const _NavigationItem(
-          label: 'Admin Management',
-          icon: Icons.admin_panel_settings_outlined,
-          selectedIcon: Icons.admin_panel_settings,
-        ),
-      );
-    }
-
-    return items;
-  }
-
-  // ============================================================
-  // SCREENS
-  // ============================================================
-
-  List<Widget> get _screens {
-    final user = _authService.currentUser;
-
-    final screens = <Widget>[
-      const DashboardScreen(),
-
-      const ProductsScreen(),
-    ];
-
-    // ==========================================================
-    // ORDERS
-    // ==========================================================
-
-    if (_authService.canViewOrders) {
-      screens.add(
-        const OrdersScreen(),
-      );
-    }
-
-    // ==========================================================
-    // PROFILE
-    // ==========================================================
-
-    screens.add(
-      const ProfileScreen(),
-    );
-
-    // ==========================================================
-    // ADMIN MANAGEMENT
-    //
-    // ONLY LEADER ADMIN
-    // ==========================================================
-
-    if (user?.isLeaderAdmin ?? false) {
-      screens.add(
-        const AdminManagementScreen(),
-      );
-    }
-
-    return screens;
-  }
-
-  // ============================================================
-  // NAVIGATION
-  // ============================================================
-
-  void _onNavigationItemTapped(int index) {
-    if (_isRefreshingSession) {
-      return;
-    }
-
-    final screens = _screens;
-
-    if (index < 0 ||
-        index >= screens.length) {
-      return;
-    }
-
-    setState(() {
-      _currentIndex = index;
-    });
-  }
-
-  // ============================================================
-  // BUILD
-  // ============================================================
 
   @override
   Widget build(BuildContext context) {
-    if (_isRefreshingSession) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
+    final user = AuthService.instance.currentUser;
 
-    final navigationItems =
-        _navigationItems;
+    final bool isAdmin = user?.isAnyAdmin ?? false;
+    final bool isLeaderAdmin = user?.isLeaderAdmin ?? false;
 
-    final screens = _screens;
+    final List<Widget> pages = [
+      const _HomeTab(),
+      const ProductsScreen(),
+      const OrdersScreen(),
+      const ProfileScreen(),
+      if (isAdmin) const AdminDashboardScreen(),
+      if (isLeaderAdmin) const AdminManagementScreen(),
+    ];
 
-    if (_currentIndex >= screens.length) {
-      _currentIndex = 0;
-    }
+    final int safeIndex =
+        _currentIndex < pages.length ? _currentIndex : 0;
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: screens,
+      appBar: AppBar(
+        title: const Text(
+          'Business Supply',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
-
+      body: pages[safeIndex],
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected:
-            _onNavigationItemTapped,
-        destinations:
-            navigationItems.map(
-          (item) {
-            return NavigationDestination(
-              icon: Icon(item.icon),
-              selectedIcon:
-                  Icon(item.selectedIcon),
-              label: item.label,
-            );
-          },
-        ).toList(),
+        selectedIndex: safeIndex,
+        onDestinationSelected: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        destinations: [
+          const NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.inventory_2_outlined),
+            selectedIcon: Icon(Icons.inventory_2),
+            label: 'Products',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.shopping_cart_outlined),
+            selectedIcon: Icon(Icons.shopping_cart),
+            label: 'Orders',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+          if (isAdmin)
+            const NavigationDestination(
+              icon: Icon(Icons.admin_panel_settings_outlined),
+              selectedIcon: Icon(Icons.admin_panel_settings),
+              label: 'Admin',
+            ),
+          if (isLeaderAdmin)
+            const NavigationDestination(
+              icon: Icon(Icons.manage_accounts_outlined),
+              selectedIcon: Icon(Icons.manage_accounts),
+              label: 'Manage',
+            ),
+        ],
       ),
     );
   }
 }
 
-// ================================================================
-// NAVIGATION ITEM
-// ================================================================
+// ============================================================
+// HOME TAB
+// ============================================================
 
-class _NavigationItem {
-  final String label;
+class _HomeTab extends StatelessWidget {
+  const _HomeTab();
 
-  final IconData icon;
+  @override
+  Widget build(BuildContext context) {
+    final user = AuthService.instance.currentUser;
 
-  final IconData selectedIcon;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ----------------------------------------------------
+          // WELCOME
+          // ----------------------------------------------------
 
-  const _NavigationItem({
-    required this.label,
-    required this.icon,
-    required this.selectedIcon,
-  });
+          Text(
+            user == null
+                ? 'Welcome'
+                : 'Welcome, ${user.name}',
+            style: Theme.of(context)
+                .textTheme
+                .headlineSmall
+                ?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+
+          const SizedBox(height: 8),
+
+          Text(
+            'What would you like to manage today?',
+            style: Theme.of(context)
+                .textTheme
+                .bodyLarge,
+          ),
+
+          const SizedBox(height: 24),
+
+          // ----------------------------------------------------
+          // ORDERS
+          // ----------------------------------------------------
+
+          _HomeFeatureCard(
+            context: context,
+            icon: Icons.shopping_cart_outlined,
+            title: 'Orders',
+            description:
+                'View and manage your orders.',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const OrdersScreen(),
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 16),
+
+          // ----------------------------------------------------
+          // PRODUCTS
+          // ----------------------------------------------------
+
+          _HomeFeatureCard(
+            context: context,
+            icon: Icons.inventory_2_outlined,
+            title: 'Products',
+            description:
+                'View, add and manage products.',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ProductsScreen(),
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 16),
+
+          // ----------------------------------------------------
+          // PROFILE
+          // ----------------------------------------------------
+
+          _HomeFeatureCard(
+            context: context,
+            icon: Icons.person_outline,
+            title: 'Profile',
+            description:
+                'View and manage your profile.',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ProfileScreen(),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }
+
+// ============================================================
+// HOME FEATURE CARD
+// ============================================================
+
+class _HomeFeatureCard extends StatelessWidget {
+  final BuildContext context;
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
+
+  const _HomeFeatureCard({
+    required this.context,
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext _) {
+    final color =
+        context.theme.colorScheme.primary;
+
+    return Card(
+      elevation: 2,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.10),
+                  borderRadius:
+                      BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  icon,
+                  size: 30,
+                  color: color,
+                ),
+              ),
+
+              const SizedBox(width: 18),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: context.theme
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    Text(
+                      description,
+                      style: context.theme
+                          .textTheme
+                          .bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 18,
+                color: context.theme
+                    .colorScheme
+                    .onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// THEME EXTENSION
+// ============================================================
+
+extension _BuildContextTheme on BuildContext {
+  ThemeData get theme => Theme.of(this);
+}
+

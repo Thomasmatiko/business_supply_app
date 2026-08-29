@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/auth_service.dart';
 
+import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/admin/admin_management_screen.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/main/main_screen.dart';
@@ -11,7 +12,9 @@ import '../screens/public/public_home_screen.dart';
 import '../screens/public/public_product_details_screen.dart';
 import '../screens/public/public_products_screen.dart';
 import '../screens/splash/splash_screen.dart';
-
+import '../screens/products/products_screen.dart';
+import '../screens/orders/orders_screen.dart';
+import '../screens/profile/profile_screen.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -20,43 +23,32 @@ class AppRoutes {
   // ROUTE NAMES
   // ============================================================
 
-  /// Application starting/public page.
   static const String splash = '/';
 
-  /// Public home page.
   static const String publicHome = '/public-home';
 
-  /// Public product catalogue.
-  static const String publicProducts =
-      '/public-products';
+  static const String publicProducts = '/public-products';
 
-  /// Public product details.
   static const String publicProductDetails =
       '/public-product-details';
 
-  /// Login page.
   static const String login = '/login';
 
   static const String register = '/register';
 
-  /// Authenticated main/dashboard area.
   static const String dashboard = '/dashboard';
 
-  /// Product management.
   static const String products = '/products';
 
-
-
-  /// Orders.
   static const String orders = '/orders';
 
-  /// Create a new order.
   static const String createOrder = '/create-order';
 
-  /// User profile.
   static const String profile = '/profile';
 
-  /// Leader Admin management.
+  static const String adminDashboard =
+      '/admin-dashboard';
+
   static const String adminManagement =
       '/admin-management';
 
@@ -68,6 +60,7 @@ class AppRoutes {
     RouteSettings settings,
   ) {
     switch (settings.name) {
+
       // ========================================================
       // SPLASH
       // ========================================================
@@ -80,10 +73,6 @@ class AppRoutes {
 
       // ========================================================
       // PUBLIC HOME
-      //
-      // NO LOGIN REQUIRED.
-      //
-      // Anyone can browse the application.
       // ========================================================
 
       case publicHome:
@@ -94,10 +83,6 @@ class AppRoutes {
 
       // ========================================================
       // PUBLIC PRODUCTS
-      //
-      // NO LOGIN REQUIRED.
-      //
-      // Visitors can browse and search products.
       // ========================================================
 
       case publicProducts:
@@ -108,11 +93,6 @@ class AppRoutes {
 
       // ========================================================
       // PUBLIC PRODUCT DETAILS
-      //
-      // NO LOGIN REQUIRED.
-      //
-      // The visitor can view the product.
-      // Login is required only when placing an order.
       // ========================================================
 
       case publicProductDetails:
@@ -148,13 +128,16 @@ class AppRoutes {
         );
 
       // ========================================================
-      // AUTHENTICATED DASHBOARD
+      // DASHBOARD
       // ========================================================
 
       case dashboard:
         if (!AuthService.instance.isLoggedIn) {
           return MaterialPageRoute(
-            builder: (_) => const LoginRequiredScreen(),
+            builder: (_) => const LoginRequiredScreen(
+              message:
+                  'Please login to access the dashboard.',
+            ),
             settings: settings,
           );
         }
@@ -165,69 +148,46 @@ class AppRoutes {
         );
 
       // ========================================================
-      // PRODUCT MANAGEMENT
-      //
-      // Only authenticated users with the correct permission
-      // should reach product management.
-      //
-      // Public users are redirected to Login.
+      // PRODUCTS
       // ========================================================
 
-      case products:
-        if (!AuthService.instance.isLoggedIn) {
-          return MaterialPageRoute(
-            builder: (_) => const LoginRequiredScreen(
-              message:
-                  'Please login to manage products.',
-            ),
-            settings: settings,
-          );
-        }
+  case products:
+  if (!AuthService.instance.isLoggedIn) {
+    return MaterialPageRoute(
+      builder: (_) => const LoginRequiredScreen(
+        message:
+            'Please login to access products.',
+      ),
+      settings: settings,
+    );
+  }
 
-        return MaterialPageRoute(
-          builder: (_) => const PlaceholderScreen(
-            title: 'Products Screen',
-          ),
-          settings: settings,
-        );
+  return MaterialPageRoute(
+    builder: (_) => const ProductsScreen(),
+    settings: settings,
+  );
 
-      // ========================================================
-     
-      //
-      // Protected management area.
-      // ========================================================
-
-      
-
-       
       // ========================================================
       // ORDERS
-      //
-      // Protected authenticated area.
       // ========================================================
+case orders:
+  if (!AuthService.instance.isLoggedIn) {
+    return MaterialPageRoute(
+      builder: (_) => const LoginRequiredScreen(
+        message:
+            'Please login to access your orders.',
+      ),
+      settings: settings,
+    );
+  }
 
-      case orders:
-        if (!AuthService.instance.isLoggedIn) {
-          return MaterialPageRoute(
-            builder: (_) => const LoginRequiredScreen(
-              message:
-                  'Please login to access your orders.',
-            ),
-            settings: settings,
-          );
-        }
-
-        return MaterialPageRoute(
-          builder: (_) => const PlaceholderScreen(
-            title: 'Orders Screen',
-          ),
-          settings: settings,
-        );
+  return MaterialPageRoute(
+    builder: (_) => const OrdersScreen(),
+    settings: settings,
+  );
 
       // ========================================================
       // CREATE ORDER
-      //
-      // A user must be logged in before creating an order.
       // ========================================================
 
       case createOrder:
@@ -248,24 +208,55 @@ class AppRoutes {
 
       // ========================================================
       // PROFILE
-      //
-      // Protected authenticated area.
       // ========================================================
 
       case profile:
-        if (!AuthService.instance.isLoggedIn) {
+  if (!AuthService.instance.isLoggedIn) {
+    return MaterialPageRoute(
+      builder: (_) => const LoginRequiredScreen(
+        message:
+            'Please login to access your profile.',
+      ),
+      settings: settings,
+    );
+  }
+
+  return MaterialPageRoute(
+    builder: (_) => const ProfileScreen(),
+    settings: settings,
+  );
+      // ========================================================
+      // ADMIN DASHBOARD
+      //
+      // LEADER ADMIN + NORMAL ADMIN
+      // ========================================================
+
+      case adminDashboard:
+        final user =
+            AuthService.instance.currentUser;
+
+        if (user == null) {
           return MaterialPageRoute(
             builder: (_) => const LoginRequiredScreen(
               message:
-                  'Please login to access your profile.',
+                  'Please login to access the Admin Dashboard.',
             ),
             settings: settings,
           );
         }
 
+        if (user.isAnyAdmin) {
+          return MaterialPageRoute(
+            builder: (_) =>
+                const AdminDashboardScreen(),
+            settings: settings,
+          );
+        }
+
         return MaterialPageRoute(
-          builder: (_) => const PlaceholderScreen(
-            title: 'Profile Screen',
+          builder: (_) => const AccessDeniedScreen(
+            message:
+                'Only administrators can access the Admin Dashboard.',
           ),
           settings: settings,
         );
@@ -273,7 +264,7 @@ class AppRoutes {
       // ========================================================
       // ADMIN MANAGEMENT
       //
-      // ONLY LEADER ADMIN CAN ACCESS THIS ROUTE.
+      // LEADER ADMIN ONLY
       // ========================================================
 
       case adminManagement:
@@ -299,7 +290,10 @@ class AppRoutes {
         }
 
         return MaterialPageRoute(
-          builder: (_) => const AccessDeniedScreen(),
+          builder: (_) => const AccessDeniedScreen(
+            message:
+                'Only the Leader Admin can access Admin Management.',
+          ),
           settings: settings,
         );
 
@@ -323,20 +317,13 @@ class AppRoutes {
 // ============================================================
 // LOGIN REQUIRED SCREEN
 // ============================================================
-//
-// Used when somebody tries to access a protected feature
-// without being logged in.
-//
-// Public browsing does NOT use this screen.
-// ============================================================
 
 class LoginRequiredScreen extends StatelessWidget {
   final String message;
 
   const LoginRequiredScreen({
     super.key,
-    this.message =
-        'Please login to continue.',
+    this.message = 'Please login to continue.',
   });
 
   @override
@@ -375,9 +362,6 @@ class LoginRequiredScreen extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 16,
-                ),
               ),
 
               const SizedBox(height: 28),
@@ -391,12 +375,8 @@ class LoginRequiredScreen extends StatelessWidget {
                       AppRoutes.login,
                     );
                   },
-                  icon: const Icon(
-                    Icons.login,
-                  ),
-                  label: const Text(
-                    'Login',
-                  ),
+                  icon: const Icon(Icons.login),
+                  label: const Text('Login'),
                 ),
               ),
 
@@ -408,9 +388,7 @@ class LoginRequiredScreen extends StatelessWidget {
                   onPressed: () {
                     Navigator.pop(context);
                   },
-                  child: const Text(
-                    'Go Back',
-                  ),
+                  child: const Text('Go Back'),
                 ),
               ),
             ],
@@ -422,13 +400,16 @@ class LoginRequiredScreen extends StatelessWidget {
 }
 
 // ============================================================
-// ACCESS DENIED
+// ACCESS DENIED SCREEN
 // ============================================================
 
-class AccessDeniedScreen
-    extends StatelessWidget {
+class AccessDeniedScreen extends StatelessWidget {
+  final String message;
+
   const AccessDeniedScreen({
     super.key,
+    this.message =
+        'You do not have permission to access this page.',
   });
 
   @override
@@ -456,15 +437,14 @@ class AccessDeniedScreen
                 'Access Denied',
                 style: TextStyle(
                   fontSize: 22,
-                  fontWeight:
-                      FontWeight.bold,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
 
-              const Text(
-                'Only the Leader Admin can access Admin Management.',
+              Text(
+                message,
                 textAlign: TextAlign.center,
               ),
 
@@ -474,9 +454,7 @@ class AccessDeniedScreen
                 onPressed: () {
                   Navigator.pop(context);
                 },
-                child: const Text(
-                  'Go Back',
-                ),
+                child: const Text('Go Back'),
               ),
             ],
           ),
@@ -487,11 +465,10 @@ class AccessDeniedScreen
 }
 
 // ============================================================
-// ROUTE ERROR
+// ROUTE ERROR SCREEN
 // ============================================================
 
-class RouteErrorScreen
-    extends StatelessWidget {
+class RouteErrorScreen extends StatelessWidget {
   final String title;
   final String message;
 
@@ -528,8 +505,7 @@ class RouteErrorScreen
                 title,
                 style: const TextStyle(
                   fontSize: 24,
-                  fontWeight:
-                      FontWeight.bold,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
 
@@ -546,9 +522,7 @@ class RouteErrorScreen
                 onPressed: () {
                   Navigator.pop(context);
                 },
-                child: const Text(
-                  'Go Back',
-                ),
+                child: const Text('Go Back'),
               ),
             ],
           ),
@@ -559,17 +533,10 @@ class RouteErrorScreen
 }
 
 // ============================================================
-// TEMPORARY SCREEN
-// ============================================================
-//
-// Kept temporarily for routes whose full screens have not yet
-// been connected.
-//
-// We can replace these one by one with your existing screens.
+// TEMPORARY PLACEHOLDER
 // ============================================================
 
-class PlaceholderScreen
-    extends StatelessWidget {
+class PlaceholderScreen extends StatelessWidget {
   final String title;
 
   const PlaceholderScreen({
@@ -588,8 +555,7 @@ class PlaceholderScreen
           title,
           style: const TextStyle(
             fontSize: 24,
-            fontWeight:
-                FontWeight.bold,
+            fontWeight: FontWeight.bold,
           ),
         ),
       ),

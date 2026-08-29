@@ -1,13 +1,25 @@
+
 import '../database/database_helper.dart';
 import '../models/user.dart';
 
 class UserService {
-  static final UserService instance = UserService._init();
+  static final UserService instance =
+      UserService._init();
 
   final DatabaseHelper _databaseHelper =
       DatabaseHelper.instance;
 
   UserService._init();
+
+  // ============================================================
+  // PERMANENT LEADER ADMIN
+  // ============================================================
+
+  static const String leaderAdminId =
+      'ADMIN001';
+
+  static const String leaderAdminEmail =
+      'thomasmatiko021@gmail.com';
 
   // ============================================================
   // GET ALL USERS
@@ -30,7 +42,9 @@ class UserService {
   // GET USER BY ID
   // ============================================================
 
-  Future<AppUser?> getUserById(String id) async {
+  Future<AppUser?> getUserById(
+    String id,
+  ) async {
     final db = await _databaseHelper.database;
 
     final result = await db.query(
@@ -51,12 +65,14 @@ class UserService {
   // GET USER BY EMAIL
   // ============================================================
 
-  Future<AppUser?> getUserByEmail(String email) async {
+  Future<AppUser?> getUserByEmail(
+    String email,
+  ) async {
     final db = await _databaseHelper.database;
 
     final result = await db.query(
       'users',
-      where: 'email = ?',
+      where: 'LOWER(TRIM(email)) = ?',
       whereArgs: [
         email.trim().toLowerCase(),
       ],
@@ -74,14 +90,16 @@ class UserService {
   // ADD USER
   // ============================================================
 
-  Future<int> addUser(AppUser user) async {
+  Future<int> addUser(
+    AppUser user,
+  ) async {
     final db = await _databaseHelper.database;
 
     final normalizedUser = user.copyWith(
       email: user.email.trim().toLowerCase(),
     );
 
-    return await db.insert(
+    return db.insert(
       'users',
       normalizedUser.toMap(),
     );
@@ -89,16 +107,27 @@ class UserService {
 
   // ============================================================
   // UPDATE USER
+  //
+  // NOTE:
+  // Administrator management should use AdminService.
   // ============================================================
 
-  Future<int> updateUser(AppUser user) async {
+  Future<int> updateUser(
+    AppUser user,
+  ) async {
+    if (user.id == leaderAdminId) {
+      throw Exception(
+        'The permanent Leader Admin cannot be modified.',
+      );
+    }
+
     final db = await _databaseHelper.database;
 
     final normalizedUser = user.copyWith(
       email: user.email.trim().toLowerCase(),
     );
 
-    return await db.update(
+    return db.update(
       'users',
       normalizedUser.toMap(),
       where: 'id = ?',
@@ -108,12 +137,24 @@ class UserService {
 
   // ============================================================
   // DELETE USER
+  //
+  // Generic deletion.
+  //
+  // Administrator-controlled deletion should use AdminService.
   // ============================================================
 
-  Future<int> deleteUser(String id) async {
+  Future<int> deleteUser(
+    String id,
+  ) async {
+    if (id == leaderAdminId) {
+      throw Exception(
+        'The permanent Leader Admin cannot be deleted.',
+      );
+    }
+
     final db = await _databaseHelper.database;
 
-    return await db.delete(
+    return db.delete(
       'users',
       where: 'id = ?',
       whereArgs: [id],
@@ -122,13 +163,6 @@ class UserService {
 
   // ============================================================
   // RESET USERS
-  //
-  // Deletes every user EXCEPT the specified Leader Admin.
-  //
-  // IMPORTANT:
-  // This only deletes records from the users table.
-  //
-  // Products, customers and orders are NOT affected.
   // ============================================================
 
   Future<int> deleteAllUsersExceptLeader(
@@ -139,19 +173,19 @@ class UserService {
     final normalizedEmail =
         leaderEmail.trim().toLowerCase();
 
-    return await db.delete(
+    return db.delete(
       'users',
-      where: 'LOWER(email) != ?',
-      whereArgs: [normalizedEmail],
+      where:
+          'LOWER(TRIM(email)) != ? AND id != ?',
+      whereArgs: [
+        normalizedEmail,
+        leaderAdminId,
+      ],
     );
   }
 
   // ============================================================
   // ENSURE LEADER ADMIN
-  //
-  // Makes sure the specified account is a Leader Admin.
-  //
-  // This does NOT create the account if it does not exist.
   // ============================================================
 
   Future<int> ensureLeaderAdmin(
@@ -162,14 +196,18 @@ class UserService {
     final normalizedEmail =
         email.trim().toLowerCase();
 
-    return await db.update(
+    return db.update(
       'users',
       {
         'role': 'admin',
         'admin_level': 'leader',
       },
-      where: 'email = ?',
-      whereArgs: [normalizedEmail],
+      where:
+          'id = ? AND LOWER(TRIM(email)) = ?',
+      whereArgs: [
+        leaderAdminId,
+        normalizedEmail,
+      ],
     );
   }
 
@@ -185,7 +223,8 @@ class UserService {
 
     final result = await db.query(
       'users',
-      where: 'email = ? AND password = ?',
+      where:
+          'LOWER(TRIM(email)) = ? AND password = ?',
       whereArgs: [
         email.trim().toLowerCase(),
         password,
@@ -201,16 +240,61 @@ class UserService {
   }
 
   // ============================================================
+  // CHANGE PASSWORD
+  // ============================================================
+
+  Future<bool> changePassword({
+    required String userId,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final db = await _databaseHelper.database;
+
+    // Verify the current password first.
+    final result = await db.query(
+      'users',
+      columns: ['id'],
+      where:
+          'id = ? AND password = ?',
+      whereArgs: [
+        userId,
+        currentPassword,
+      ],
+      limit: 1,
+    );
+
+    // Current password is incorrect.
+    if (result.isEmpty) {
+      return false;
+    }
+
+    // Update the password.
+    final updated = await db.update(
+      'users',
+      {
+        'password': newPassword,
+      },
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+
+    return updated > 0;
+  }
+
+  // ============================================================
   // EMAIL EXISTS
   // ============================================================
 
-  Future<bool> emailExists(String email) async {
+  Future<bool> emailExists(
+    String email,
+  ) async {
     final db = await _databaseHelper.database;
 
     final result = await db.query(
       'users',
       columns: ['id'],
-      where: 'email = ?',
+      where:
+          'LOWER(TRIM(email)) = ?',
       whereArgs: [
         email.trim().toLowerCase(),
       ],
@@ -229,7 +313,8 @@ class UserService {
 
     final result = await db.query(
       'users',
-      where: 'role = ?',
+      where:
+          'LOWER(TRIM(role)) = ?',
       whereArgs: ['buyer'],
       orderBy: 'name ASC',
     );
@@ -248,7 +333,8 @@ class UserService {
 
     final result = await db.query(
       'users',
-      where: 'role = ?',
+      where:
+          'LOWER(TRIM(role)) = ?',
       whereArgs: ['seller'],
       orderBy: 'name ASC',
     );
@@ -267,7 +353,8 @@ class UserService {
 
     final result = await db.query(
       'users',
-      where: 'role = ?',
+      where:
+          'LOWER(TRIM(role)) = ?',
       whereArgs: ['admin'],
       orderBy: 'name ASC',
     );
@@ -286,7 +373,9 @@ class UserService {
 
     final result = await db.query(
       'users',
-      where: 'role = ? AND admin_level = ?',
+      where:
+          'LOWER(TRIM(role)) = ? '
+          'AND LOWER(TRIM(admin_level)) = ?',
       whereArgs: [
         'admin',
         'normal',
@@ -308,7 +397,9 @@ class UserService {
 
     final result = await db.query(
       'users',
-      where: 'role = ? AND admin_level = ?',
+      where:
+          'LOWER(TRIM(role)) = ? '
+          'AND LOWER(TRIM(admin_level)) = ?',
       whereArgs: [
         'admin',
         'leader',
@@ -320,62 +411,5 @@ class UserService {
         .map((map) => AppUser.fromMap(map))
         .toList();
   }
-
-  // ============================================================
-  // PROMOTE USER TO NORMAL ADMIN
-  // ============================================================
-
-  Future<int> promoteToAdmin(String userId) async {
-    final db = await _databaseHelper.database;
-
-    return await db.update(
-      'users',
-      {
-        'role': 'admin',
-        'admin_level': 'normal',
-      },
-      where: 'id = ?',
-      whereArgs: [userId],
-    );
-  }
-
-  // ============================================================
-  // PROMOTE USER TO LEADER ADMIN
-  // ============================================================
-
-  Future<int> promoteToLeaderAdmin(
-    String userId,
-  ) async {
-    final db = await _databaseHelper.database;
-
-    return await db.update(
-      'users',
-      {
-        'role': 'admin',
-        'admin_level': 'leader',
-      },
-      where: 'id = ?',
-      whereArgs: [userId],
-    );
-  }
-
-  // ============================================================
-  // REMOVE ADMIN PRIVILEGES
-  // ============================================================
-
-  Future<int> removeAdminPrivileges(
-    String userId,
-  ) async {
-    final db = await _databaseHelper.database;
-
-    return await db.update(
-      'users',
-      {
-        'role': 'buyer',
-        'admin_level': 'none',
-      },
-      where: 'id = ?',
-      whereArgs: [userId],
-    );
-  }
 }
+

@@ -6,6 +6,7 @@ class AppUser {
   final String password;
   final String role;
   final String adminLevel;
+  final String? profileImage;
 
   const AppUser({
     required this.id,
@@ -15,6 +16,7 @@ class AppUser {
     required this.password,
     required this.role,
     this.adminLevel = 'none',
+    this.profileImage,
   });
 
   // ============================================================
@@ -22,29 +24,29 @@ class AppUser {
   // ============================================================
 
   bool get isBuyer {
-    return role == 'buyer';
+    return role.trim().toLowerCase() == 'buyer';
   }
 
   bool get isSeller {
-    return role == 'seller';
+    return role.trim().toLowerCase() == 'seller';
   }
 
   bool get isAdmin {
-    return role == 'admin';
+    return role.trim().toLowerCase() == 'admin';
   }
 
   bool get isLeaderAdmin {
-    return role == 'admin' &&
-        adminLevel == 'leader';
+    return isAdmin &&
+        adminLevel.trim().toLowerCase() == 'leader';
   }
 
   bool get isNormalAdmin {
-    return role == 'admin' &&
-        adminLevel == 'normal';
+    return isAdmin &&
+        adminLevel.trim().toLowerCase() == 'normal';
   }
 
   bool get isAnyAdmin {
-    return role == 'admin';
+    return isAdmin;
   }
 
   // ============================================================
@@ -59,6 +61,7 @@ class AppUser {
     String? password,
     String? role,
     String? adminLevel,
+    String? profileImage,
   }) {
     return AppUser(
       id: id ?? this.id,
@@ -68,6 +71,7 @@ class AppUser {
       password: password ?? this.password,
       role: role ?? this.role,
       adminLevel: adminLevel ?? this.adminLevel,
+      profileImage: profileImage ?? this.profileImage,
     );
   }
 
@@ -84,6 +88,7 @@ class AppUser {
       'password': password,
       'role': role,
       'admin_level': adminLevel,
+      'profile_image': profileImage,
     };
   }
 
@@ -101,6 +106,8 @@ class AppUser {
       role: map['role']?.toString() ?? '',
       adminLevel:
           map['admin_level']?.toString() ?? 'none',
+      profileImage:
+          map['profile_image']?.toString(),
     );
   }
 }

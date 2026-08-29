@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../models/product.dart';
@@ -258,33 +259,41 @@ class _ProductsScreenState extends State<ProductsScreen> {
   // ============================================================
 
   Future<void> _openProductDetails(
-    Product product,
-  ) async {
-    final updatedProduct =
-        await Navigator.push<Product>(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            ProductDetailsScreen(
-          product: product,
-        ),
+  Product product,
+) async {
+  final result = await Navigator.push<Object?>(
+    context,
+    MaterialPageRoute(
+      builder: (context) => ProductDetailsScreen(
+        product: product,
       ),
-    );
+    ),
+  );
 
-    if (!mounted || updatedProduct == null) {
-      return;
-    }
+  if (!mounted || result == null) {
+    return;
+  }
 
+  // Product was updated
+  if (result is Product) {
     setState(() {
       final index = _products.indexWhere(
-        (item) => item.id == updatedProduct.id,
+        (item) => item.id == result.id,
       );
 
       if (index != -1) {
-        _products[index] = updatedProduct;
+        _products[index] = result;
       }
     });
+
+    return;
   }
+
+  // Product was deleted
+  if (result is bool && result == true) {
+    await _loadProducts();
+  }
+}
 
   // ============================================================
   // REFRESH
@@ -555,127 +564,159 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
+Widget _buildProductPlaceholder(
+  Product product,
+) {
+  return Container(
+    width: 70,
+    height: 70,
+    decoration: BoxDecoration(
+      color: Theme.of(context)
+          .colorScheme
+          .primaryContainer,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Center(
+      child: Text(
+        product.name.isNotEmpty
+            ? product.name[0].toUpperCase()
+            : '?',
+        style: TextStyle(
+          fontSize: 26,
+          fontWeight: FontWeight.bold,
+          color: Theme.of(context)
+              .colorScheme
+              .onPrimaryContainer,
+        ),
+      ),
+    ),
+  );
+}
   // ============================================================
   // PRODUCT CARD
   // ============================================================
 
   Widget _buildProductCard(
-    Product product,
-  ) {
-    return Card(
-      margin:
-          const EdgeInsets.only(
-        bottom: 12,
-      ),
-      child: ListTile(
-        onTap: () {
-          _openProductDetails(
-            product,
-          );
-        },
-        contentPadding:
-            const EdgeInsets.all(12),
+  Product product,
+) {
+  return Card(
+    margin: const EdgeInsets.only(
+      bottom: 12,
+    ),
+    child: ListTile(
+      onTap: () {
+        _openProductDetails(product);
+      },
 
-        // ======================================================
-        // PRODUCT ICON
-        // ======================================================
+      contentPadding: const EdgeInsets.all(12),
 
-        leading: CircleAvatar(
-          child: Text(
-            product.name.isNotEmpty
-                ? product.name[0]
-                    .toUpperCase()
-                : '?',
-          ),
-        ),
+      // ======================================================
+      // PRODUCT IMAGE
+      // ======================================================
 
-        // ======================================================
-        // PRODUCT NAME
-        // ======================================================
-
-        title: Text(
-          product.name,
-          style:
-              const TextStyle(
-            fontWeight:
-                FontWeight.bold,
-          ),
-        ),
-
-        // ======================================================
-        // PRODUCT INFORMATION
-        // ======================================================
-
-        subtitle: Padding(
-          padding:
-              const EdgeInsets.only(
-            top: 6,
-          ),
-          child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
-            children: [
-              Text(
-                'ID: ${product.id}',
-              ),
-
-              Text(
-                'Category: ${product.category}',
-              ),
-
-              const SizedBox(
-                height: 4,
-              ),
-
-              Text(
-                'Selling Price: ${_formatPrice(product.sellingPrice)}',
-              ),
-
-              Text(
-                'Stock: ${product.stock}',
-                style: TextStyle(
-                  fontWeight:
-                      FontWeight.bold,
-                  color:
-                      product.isLowStock
-                          ? Colors.red
-                          : Colors.green,
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          width: 70,
+          height: 70,
+          child: product.imagePath != null &&
+                  product.imagePath!.isNotEmpty
+              ? Image.file(
+                  File(product.imagePath!),
+                  fit: BoxFit.cover,
+                  errorBuilder: (
+                    context,
+                    error,
+                    stackTrace,
+                  ) {
+                    return _buildProductPlaceholder(
+                      product,
+                    );
+                  },
+                )
+              : _buildProductPlaceholder(
+                  product,
                 ),
-              ),
-
-              // ==================================================
-              // BUYER
-              //
-              // Buyers can see which seller owns the product.
-              // ==================================================
-
-              if (_isBuyer &&
-                  product.sellerId != null)
-                Padding(
-                  padding:
-                      const EdgeInsets.only(
-                    top: 4,
-                  ),
-                  child: Text(
-                    'Seller ID: ${product.sellerId}',
-                    style:
-                        const TextStyle(
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-
-        isThreeLine: true,
-
-        trailing:
-            const Icon(
-          Icons.arrow_forward_ios,
-          size: 16,
         ),
       ),
-    );
-  }
+
+      // ======================================================
+      // PRODUCT NAME
+      // ======================================================
+
+      title: Text(
+        product.name,
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+
+      // ======================================================
+      // PRODUCT INFORMATION
+      // ======================================================
+
+      subtitle: Padding(
+        padding: const EdgeInsets.only(
+          top: 6,
+        ),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+          children: [
+            Text(
+              'ID: ${product.id}',
+            ),
+
+            Text(
+              'Category: ${product.category}',
+            ),
+
+            const SizedBox(
+              height: 4,
+            ),
+
+            Text(
+              'Selling Price: ${_formatPrice(product.sellingPrice)}',
+            ),
+
+            Text(
+              'Stock: ${product.stock}',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: product.isLowStock
+                    ? Colors.red
+                    : Colors.green,
+              ),
+            ),
+
+            // ==================================================
+            // BUYER
+            // ==================================================
+
+            if (_isBuyer &&
+                product.sellerId != null)
+              Padding(
+                padding: const EdgeInsets.only(
+                  top: 4,
+                ),
+                child: Text(
+                  'Seller ID: ${product.sellerId}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+
+      isThreeLine: true,
+
+      trailing: const Icon(
+        Icons.arrow_forward_ios,
+        size: 16,
+      ),
+    ),
+  );
+}
 }

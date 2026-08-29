@@ -1,5 +1,45 @@
+import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
+
 import '../database/database_helper.dart';
 import '../models/user.dart';
+
+class AdminDashboardStats {
+  final int totalUsers;
+  final int buyers;
+  final int sellers;
+  final int admins;
+
+  final int products;
+  final int lowStockProducts;
+
+  final int orders;
+  final int pendingOrders;
+  final int confirmedOrders;
+  final int processingOrders;
+  final int shippedOrders;
+  final int deliveredOrders;
+  final int cancelledOrders;
+
+  final double totalSales;
+
+  const AdminDashboardStats({
+    required this.totalUsers,
+    required this.buyers,
+    required this.sellers,
+    required this.admins,
+    required this.products,
+    required this.lowStockProducts,
+    required this.orders,
+    required this.pendingOrders,
+    required this.confirmedOrders,
+    required this.processingOrders,
+    required this.shippedOrders,
+    required this.deliveredOrders,
+    required this.cancelledOrders,
+    required this.totalSales,
+  });
+}
 
 class AdminService {
   static final AdminService instance = AdminService._init();
@@ -9,20 +49,113 @@ class AdminService {
   AdminService._init();
 
   // ============================================================
-  // GET ALL ADMINS
+  // PERMANENT LEADER ADMIN
   // ============================================================
 
-  Future<List<AppUser>> getAdmins() async {
+  static const String leaderAdminId = 'ADMIN001';
+
+  static const String leaderAdminEmail =
+      'thomasmatiko021@gmail.com';
+
+  static const String leaderAdminName = 'Thomas Matiko';
+
+  static const String leaderAdminPhone = '0626615007';
+
+  static const String leaderAdminPassword = 'Thomas@2023';
+
+  // ============================================================
+  // ADMIN CHECKS
+  // ============================================================
+
+  bool isLeaderAdmin(AppUser user) {
+    return user.id == leaderAdminId &&
+        user.role.trim().toLowerCase() == 'admin' &&
+        user.adminLevel.trim().toLowerCase() == 'leader';
+  }
+
+  bool isNormalAdmin(AppUser user) {
+    return user.role.trim().toLowerCase() == 'admin' &&
+        user.adminLevel.trim().toLowerCase() == 'normal';
+  }
+
+  bool isAnyAdmin(AppUser user) {
+    return user.role.trim().toLowerCase() == 'admin';
+  }
+
+  // ============================================================
+  // AUTHORIZATION
+  // ============================================================
+
+  void _requireAdmin(AppUser currentUser) {
+    if (!isAnyAdmin(currentUser)) {
+      throw Exception(
+        'Administrator permission is required.',
+      );
+    }
+  }
+
+  void _requireLeaderAdmin(AppUser currentUser) {
+    if (!isLeaderAdmin(currentUser)) {
+      throw Exception(
+        'Only the Leader Admin can perform this action.',
+      );
+    }
+  }
+
+  void _preventSelfAction({
+    required AppUser currentUser,
+    required String targetUserId,
+    required String message,
+  }) {
+    if (currentUser.id == targetUserId) {
+      throw Exception(message);
+    }
+  }
+
+  void _preventLeaderAction(String targetUserId) {
+    if (targetUserId == leaderAdminId) {
+      throw Exception(
+        'The permanent Leader Admin is protected.',
+      );
+    }
+  }
+
+  // ============================================================
+  // GET ALL USERS
+  // ============================================================
+
+  Future<List<AppUser>> getAllUsers() async {
     final db = await _databaseHelper.database;
 
     final result = await db.query(
       'users',
-      where: 'role = ?',
-      whereArgs: ['admin'],
       orderBy: 'name ASC',
     );
 
-    return result.map((map) => AppUser.fromMap(map)).toList();
+    return result
+        .map((map) => AppUser.fromMap(map))
+        .toList();
+  }
+
+  // ============================================================
+  // GET USER BY ID
+  // ============================================================
+
+  Future<AppUser?> getUserById(String id) async {
+    final db = await _databaseHelper.database;
+
+    final result = await db.query(
+      'users',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+
+    if (result.isEmpty) {
+      return null;
+    }
+
+    return AppUser.fromMap(result.first);
   }
 
   // ============================================================
@@ -34,7 +167,7 @@ class AdminService {
 
     final result = await db.query(
       'users',
-      where: 'id = ? AND role = ?',
+      where: 'id = ? AND LOWER(TRIM(role)) = ?',
       whereArgs: [id, 'admin'],
       limit: 1,
     );
@@ -47,43 +180,287 @@ class AdminService {
   }
 
   // ============================================================
-  // CHECK LEADER ADMIN
+  // GET ALL ADMINS
   // ============================================================
 
-  bool isLeaderAdmin(AppUser user) {
-    return user.role == 'admin' &&
-        user.adminLevel == 'leader';
+  Future<List<AppUser>> getAdmins() async {
+    final db = await _databaseHelper.database;
+
+    final result = await db.query(
+      'users',
+      where: 'LOWER(TRIM(role)) = ?',
+      whereArgs: ['admin'],
+      orderBy: 'name ASC',
+    );
+
+    return result
+        .map((map) => AppUser.fromMap(map))
+        .toList();
   }
 
   // ============================================================
-  // CHECK NORMAL ADMIN
+  // GET NORMAL ADMINS
   // ============================================================
 
-  bool isNormalAdmin(AppUser user) {
-    return user.role == 'admin' &&
-        user.adminLevel == 'admin';
+  Future<List<AppUser>> getNormalAdmins() async {
+    final db = await _databaseHelper.database;
+
+    final result = await db.query(
+      'users',
+      where:
+          'LOWER(TRIM(role)) = ? '
+          'AND LOWER(TRIM(admin_level)) = ?',
+      whereArgs: ['admin', 'normal'],
+      orderBy: 'name ASC',
+    );
+
+    return result
+        .map((map) => AppUser.fromMap(map))
+        .toList();
   }
 
   // ============================================================
-  // CREATE ADMIN
-  //
-  // ONLY LEADER ADMIN SHOULD CALL THIS METHOD.
+  // GET LEADER ADMINS
+  // ============================================================
+
+  Future<List<AppUser>> getLeaderAdmins() async {
+    final db = await _databaseHelper.database;
+
+    final result = await db.query(
+      'users',
+      where:
+          'LOWER(TRIM(role)) = ? '
+          'AND LOWER(TRIM(admin_level)) = ?',
+      whereArgs: ['admin', 'leader'],
+      orderBy: 'name ASC',
+    );
+
+    return result
+        .map((map) => AppUser.fromMap(map))
+        .toList();
+  }
+
+  // ============================================================
+  // GET BUYERS
+  // ============================================================
+
+  Future<List<AppUser>> getBuyers() async {
+    final db = await _databaseHelper.database;
+
+    final result = await db.query(
+      'users',
+      where: 'LOWER(TRIM(role)) = ?',
+      whereArgs: ['buyer'],
+      orderBy: 'name ASC',
+    );
+
+    return result
+        .map((map) => AppUser.fromMap(map))
+        .toList();
+  }
+
+  // ============================================================
+  // GET SELLERS
+  // ============================================================
+
+  Future<List<AppUser>> getSellers() async {
+    final db = await _databaseHelper.database;
+
+    final result = await db.query(
+      'users',
+      where: 'LOWER(TRIM(role)) = ?',
+      whereArgs: ['seller'],
+      orderBy: 'name ASC',
+    );
+
+    return result
+        .map((map) => AppUser.fromMap(map))
+        .toList();
+  }
+
+  // ============================================================
+  // DASHBOARD STATISTICS
+  // ============================================================
+
+  Future<AdminDashboardStats> getDashboardStats() async {
+    final db = await _databaseHelper.database;
+
+    try {
+      final totalUsersResult = await db.rawQuery(
+        'SELECT COUNT(*) AS count FROM users',
+      );
+
+      final buyersResult = await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS count
+        FROM users
+        WHERE LOWER(TRIM(role)) = ?
+        ''',
+        ['buyer'],
+      );
+
+      final sellersResult = await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS count
+        FROM users
+        WHERE LOWER(TRIM(role)) = ?
+        ''',
+        ['seller'],
+      );
+
+      final adminsResult = await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS count
+        FROM users
+        WHERE LOWER(TRIM(role)) = ?
+        ''',
+        ['admin'],
+      );
+
+      final productsResult = await db.rawQuery(
+        'SELECT COUNT(*) AS count FROM products',
+      );
+
+      final lowStockResult = await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS count
+        FROM products
+        WHERE stock <= ?
+        ''',
+        [10],
+      );
+
+      final ordersResult = await db.rawQuery(
+        'SELECT COUNT(*) AS count FROM orders',
+      );
+
+      final pendingOrdersResult = await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS count
+        FROM orders
+        WHERE LOWER(TRIM(status)) = ?
+        ''',
+        ['pending'],
+      );
+
+      final confirmedOrdersResult = await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS count
+        FROM orders
+        WHERE LOWER(TRIM(status)) = ?
+        ''',
+        ['confirmed'],
+      );
+
+      final processingOrdersResult = await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS count
+        FROM orders
+        WHERE LOWER(TRIM(status)) = ?
+        ''',
+        ['processing'],
+      );
+
+      final shippedOrdersResult = await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS count
+        FROM orders
+        WHERE LOWER(TRIM(status)) = ?
+        ''',
+        ['shipped'],
+      );
+
+      final deliveredOrdersResult = await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS count
+        FROM orders
+        WHERE LOWER(TRIM(status)) = ?
+        ''',
+        ['delivered'],
+      );
+
+      final cancelledOrdersResult = await db.rawQuery(
+        '''
+        SELECT COUNT(*) AS count
+        FROM orders
+        WHERE LOWER(TRIM(status)) = ?
+        ''',
+        ['cancelled'],
+      );
+
+      final salesResult = await db.rawQuery(
+        '''
+        SELECT COALESCE(SUM(total_amount), 0) AS total
+        FROM orders
+        WHERE LOWER(TRIM(status)) != ?
+        ''',
+        ['cancelled'],
+      );
+
+      return AdminDashboardStats(
+        totalUsers: _getCount(totalUsersResult),
+        buyers: _getCount(buyersResult),
+        sellers: _getCount(sellersResult),
+        admins: _getCount(adminsResult),
+        products: _getCount(productsResult),
+        lowStockProducts: _getCount(lowStockResult),
+        orders: _getCount(ordersResult),
+        pendingOrders: _getCount(pendingOrdersResult),
+        confirmedOrders: _getCount(confirmedOrdersResult),
+        processingOrders: _getCount(processingOrdersResult),
+        shippedOrders: _getCount(shippedOrdersResult),
+        deliveredOrders: _getCount(deliveredOrdersResult),
+        cancelledOrders: _getCount(cancelledOrdersResult),
+        totalSales: _getTotal(salesResult),
+      );
+    } catch (e, stackTrace) {
+      debugPrint('==============================================');
+      debugPrint('ADMIN DASHBOARD DATABASE ERROR');
+      debugPrint('==============================================');
+      debugPrint(e.toString());
+      debugPrint('----------------------------------------------');
+      debugPrint(stackTrace.toString());
+      debugPrint('==============================================');
+
+      rethrow;
+    }
+  }
+
+  // ============================================================
+  // CREATE NORMAL ADMIN
   // ============================================================
 
   Future<int> createAdmin({
     required AppUser currentUser,
     required AppUser newAdmin,
   }) async {
-    if (!isLeaderAdmin(currentUser)) {
+    _requireLeaderAdmin(currentUser);
+
+    if (newAdmin.id == leaderAdminId) {
       throw Exception(
-        'Only the Leader Admin can create administrators.',
+        'The permanent Leader Admin cannot be recreated.',
       );
     }
 
-    if (newAdmin.role != 'admin') {
-      throw Exception(
-        'New administrator must have admin role.',
-      );
+    final name = newAdmin.name.trim();
+    final email = newAdmin.email.trim().toLowerCase();
+    final phone = newAdmin.phone.trim();
+    final password = newAdmin.password;
+
+    if (name.isEmpty) {
+      throw Exception('Name is required.');
+    }
+
+    if (email.isEmpty) {
+      throw Exception('Email is required.');
+    }
+
+    if (phone.isEmpty) {
+      throw Exception('Phone number is required.');
+    }
+
+    if (password.isEmpty) {
+      throw Exception('Password is required.');
     }
 
     final db = await _databaseHelper.database;
@@ -91,8 +468,8 @@ class AdminService {
     final existingUser = await db.query(
       'users',
       columns: ['id'],
-      where: 'email = ?',
-      whereArgs: [newAdmin.email.trim().toLowerCase()],
+      where: 'LOWER(TRIM(email)) = ?',
+      whereArgs: [email],
       limit: 1,
     );
 
@@ -102,45 +479,227 @@ class AdminService {
       );
     }
 
-    final admin = newAdmin.copyWith(
-      role: 'admin',
-      adminLevel: 'admin',
-    );
+    final adminId = await _generateNextAdminId(db);
 
-    return await db.insert(
+    return db.insert(
       'users',
-      admin.toMap(),
+      {
+        'id': adminId,
+        'name': name,
+        'email': email,
+        'phone': phone,
+        'password': password,
+        'role': 'admin',
+        'admin_level': 'normal',
+      },
     );
   }
 
   // ============================================================
-  // PROMOTE TO LEADER ADMIN
+  // GENERATE NEXT ADMIN ID
   // ============================================================
 
-  Future<int> promoteToLeader({
-    required AppUser currentUser,
-    required String adminId,
-  }) async {
-    if (!isLeaderAdmin(currentUser)) {
-      throw Exception(
-        'Only the Leader Admin can change administrator privileges.',
-      );
+  Future<String> _generateNextAdminId(Database db) async {
+    final result = await db.rawQuery(
+      '''
+      SELECT id
+      FROM users
+      WHERE id LIKE 'ADMIN%'
+      ''',
+    );
+
+    int highestNumber = 1;
+
+    for (final row in result) {
+      final id = row['id']?.toString() ?? '';
+
+      final match = RegExp(
+        r'^ADMIN(\d+)$',
+      ).firstMatch(id);
+
+      if (match == null) {
+        continue;
+      }
+
+      final number =
+          int.tryParse(match.group(1)!) ?? 0;
+
+      if (number > highestNumber) {
+        highestNumber = number;
+      }
     }
 
-    final admin = await getAdminById(adminId);
+    final nextNumber = highestNumber + 1;
 
-    if (admin == null) {
+    return 'ADMIN${nextNumber.toString().padLeft(3, '0')}';
+  }
+
+  // ============================================================
+  // PROMOTE USER TO NORMAL ADMIN
+  // ============================================================
+
+  Future<int> promoteUserToAdmin({
+    required AppUser currentUser,
+    required String userId,
+  }) async {
+    _requireLeaderAdmin(currentUser);
+
+    _preventLeaderAction(userId);
+
+    _preventSelfAction(
+      currentUser: currentUser,
+      targetUserId: userId,
+      message: 'You cannot promote yourself.',
+    );
+
+    final user = await getUserById(userId);
+
+    if (user == null) {
+      throw Exception('User not found.');
+    }
+
+    if (user.isAnyAdmin) {
       throw Exception(
-        'Administrator not found.',
+        'This user is already an administrator.',
       );
     }
 
     final db = await _databaseHelper.database;
 
-    return await db.update(
+    return db.update(
       'users',
       {
-        'admin_level': 'leader',
+        'role': 'admin',
+        'admin_level': 'normal',
+      },
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+  }
+
+  // ============================================================
+  // EDIT NORMAL ADMIN
+  // ============================================================
+
+  Future<int> updateAdmin({
+    required AppUser currentUser,
+    required AppUser updatedAdmin,
+  }) async {
+    _requireLeaderAdmin(currentUser);
+
+    _preventLeaderAction(updatedAdmin.id);
+
+    _preventSelfAction(
+      currentUser: currentUser,
+      targetUserId: updatedAdmin.id,
+      message: 'You cannot edit your own administrator account here.',
+    );
+
+    if (!updatedAdmin.isNormalAdmin) {
+      throw Exception(
+        'Only Normal Admin accounts can be edited here.',
+      );
+    }
+
+    final name = updatedAdmin.name.trim();
+    final email = updatedAdmin.email.trim().toLowerCase();
+    final phone = updatedAdmin.phone.trim();
+
+    if (name.isEmpty) {
+      throw Exception('Name is required.');
+    }
+
+    if (email.isEmpty) {
+      throw Exception('Email is required.');
+    }
+
+    if (phone.isEmpty) {
+      throw Exception('Phone number is required.');
+    }
+
+    final existing = await getUserById(updatedAdmin.id);
+
+    if (existing == null) {
+      throw Exception('Administrator not found.');
+    }
+
+    if (!existing.isNormalAdmin) {
+      throw Exception(
+        'Only Normal Admin accounts can be edited here.',
+      );
+    }
+
+    final db = await _databaseHelper.database;
+
+    final duplicateEmail = await db.query(
+      'users',
+      columns: ['id'],
+      where:
+          'LOWER(TRIM(email)) = ? AND id != ?',
+      whereArgs: [
+        email,
+        updatedAdmin.id,
+      ],
+      limit: 1,
+    );
+
+    if (duplicateEmail.isNotEmpty) {
+      throw Exception(
+        'An account with this email already exists.',
+      );
+    }
+
+    return db.update(
+      'users',
+      {
+        'name': name,
+        'email': email,
+        'phone': phone,
+      },
+      where: 'id = ?',
+      whereArgs: [updatedAdmin.id],
+    );
+  }
+
+  // ============================================================
+  // REMOVE ADMIN PRIVILEGES
+  // ============================================================
+
+  Future<int> removeAdminPrivileges({
+    required AppUser currentUser,
+    required String adminId,
+  }) async {
+    _requireLeaderAdmin(currentUser);
+
+    _preventLeaderAction(adminId);
+
+    _preventSelfAction(
+      currentUser: currentUser,
+      targetUserId: adminId,
+      message:
+          'You cannot remove your own administrator privileges.',
+    );
+
+    final admin = await getAdminById(adminId);
+
+    if (admin == null) {
+      throw Exception('Administrator not found.');
+    }
+
+    if (!isNormalAdmin(admin)) {
+      throw Exception(
+        'Only a Normal Admin can have administrator '
+        'privileges removed.',
+      );
+    }
+
+    final db = await _databaseHelper.database;
+
+    return db.update(
+      'users',
+      {
+        'role': 'buyer',
+        'admin_level': 'none',
       },
       where: 'id = ?',
       whereArgs: [adminId],
@@ -148,42 +707,48 @@ class AdminService {
   }
 
   // ============================================================
-  // CHANGE LEADER TO NORMAL ADMIN
+  // DELETE USER AS ADMIN
   // ============================================================
 
-  Future<int> demoteToNormalAdmin({
+  Future<int> deleteUserAsAdmin({
     required AppUser currentUser,
-    required String adminId,
+    required String targetUserId,
   }) async {
-    if (!isLeaderAdmin(currentUser)) {
+    _requireAdmin(currentUser);
+
+    _preventLeaderAction(targetUserId);
+
+    _preventSelfAction(
+      currentUser: currentUser,
+      targetUserId: targetUserId,
+      message: 'You cannot delete your own account.',
+    );
+
+    final targetUser = await getUserById(targetUserId);
+
+    if (targetUser == null) {
+      throw Exception('User not found.');
+    }
+
+    if (targetUser.isLeaderAdmin) {
       throw Exception(
-        'Only the Leader Admin can change administrator privileges.',
+        'The Leader Admin cannot be deleted.',
       );
     }
 
-    if (currentUser.id == adminId) {
+    if (currentUser.isNormalAdmin &&
+        targetUser.isAnyAdmin) {
       throw Exception(
-        'The current Leader Admin cannot demote themselves.',
-      );
-    }
-
-    final admin = await getAdminById(adminId);
-
-    if (admin == null) {
-      throw Exception(
-        'Administrator not found.',
+        'Normal Admins cannot remove administrators.',
       );
     }
 
     final db = await _databaseHelper.database;
 
-    return await db.update(
+    return db.delete(
       'users',
-      {
-        'admin_level': 'admin',
-      },
       where: 'id = ?',
-      whereArgs: [adminId],
+      whereArgs: [targetUserId],
     );
   }
 
@@ -195,32 +760,37 @@ class AdminService {
     required AppUser currentUser,
     required String adminId,
   }) async {
-    if (!isLeaderAdmin(currentUser)) {
-      throw Exception(
-        'Only the Leader Admin can remove administrators.',
-      );
-    }
+    _requireLeaderAdmin(currentUser);
 
-    if (currentUser.id == adminId) {
-      throw Exception(
-        'The Leader Admin cannot delete themselves.',
-      );
-    }
+    _preventLeaderAction(adminId);
+
+    _preventSelfAction(
+      currentUser: currentUser,
+      targetUserId: adminId,
+      message: 'You cannot delete your own account.',
+    );
 
     final admin = await getAdminById(adminId);
 
     if (admin == null) {
+      throw Exception('Administrator not found.');
+    }
+
+    if (!isNormalAdmin(admin)) {
       throw Exception(
-        'Administrator not found.',
+        'Only a Normal Admin can be deleted here.',
       );
     }
 
     final db = await _databaseHelper.database;
 
-    return await db.delete(
+    return db.delete(
       'users',
-      where: 'id = ? AND role = ?',
-      whereArgs: [adminId, 'admin'],
+      where: 'id = ? AND LOWER(TRIM(role)) = ?',
+      whereArgs: [
+        adminId,
+        'admin',
+      ],
     );
   }
 
@@ -235,12 +805,12 @@ class AdminService {
       '''
       SELECT COUNT(*) AS count
       FROM users
-      WHERE role = ?
+      WHERE LOWER(TRIM(role)) = ?
       ''',
       ['admin'],
     );
 
-    return (result.first['count'] as num?)?.toInt() ?? 0;
+    return _getCount(result);
   }
 
   // ============================================================
@@ -254,12 +824,205 @@ class AdminService {
       '''
       SELECT COUNT(*) AS count
       FROM users
-      WHERE role = ?
-      AND admin_level = ?
+      WHERE LOWER(TRIM(role)) = ?
+      AND LOWER(TRIM(admin_level)) = ?
       ''',
-      ['admin', 'leader'],
+      [
+        'admin',
+        'leader',
+      ],
     );
 
-    return (result.first['count'] as num?)?.toInt() ?? 0;
+    return _getCount(result);
+  }
+
+  // ============================================================
+  // COUNT NORMAL ADMINS
+  // ============================================================
+
+  Future<int> getNormalAdminCount() async {
+    final db = await _databaseHelper.database;
+
+    final result = await db.rawQuery(
+      '''
+      SELECT COUNT(*) AS count
+      FROM users
+      WHERE LOWER(TRIM(role)) = ?
+      AND LOWER(TRIM(admin_level)) = ?
+      ''',
+      [
+        'admin',
+        'normal',
+      ],
+    );
+
+    return _getCount(result);
+  }
+
+  // ============================================================
+  // USER COUNTS
+  // ============================================================
+
+  Future<Map<String, int>> getUserCounts() async {
+    final db = await _databaseHelper.database;
+
+    final result = await db.rawQuery(
+      '''
+      SELECT
+        COUNT(*) AS total,
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(role)) = 'buyer'
+            THEN 1 ELSE 0
+          END
+        ) AS buyers,
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(role)) = 'seller'
+            THEN 1 ELSE 0
+          END
+        ) AS sellers,
+        SUM(
+          CASE
+            WHEN LOWER(TRIM(role)) = 'admin'
+            THEN 1 ELSE 0
+          END
+        ) AS admins
+      FROM users
+      ''',
+    );
+
+    if (result.isEmpty) {
+      return {
+        'total': 0,
+        'buyers': 0,
+        'sellers': 0,
+        'admins': 0,
+      };
+    }
+
+    final row = result.first;
+
+    return {
+      'total': (row['total'] as num?)?.toInt() ?? 0,
+      'buyers': (row['buyers'] as num?)?.toInt() ?? 0,
+      'sellers': (row['sellers'] as num?)?.toInt() ?? 0,
+      'admins': (row['admins'] as num?)?.toInt() ?? 0,
+    };
+  }
+
+  // ============================================================
+  // ENSURE PERMANENT LEADER ADMIN
+  // ============================================================
+
+  Future<void> ensureLeaderAdmin() async {
+    final db = await _databaseHelper.database;
+
+    final result = await db.query(
+      'users',
+      where: 'id = ?',
+      whereArgs: [leaderAdminId],
+      limit: 1,
+    );
+
+    if (result.isEmpty) {
+      await db.insert(
+        'users',
+        {
+          'id': leaderAdminId,
+          'name': leaderAdminName,
+          'email': leaderAdminEmail,
+          'phone': leaderAdminPhone,
+          'password': leaderAdminPassword,
+          'role': 'admin',
+          'admin_level': 'leader',
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+
+      return;
+    }
+
+    await db.update(
+      'users',
+      {
+        'name': leaderAdminName,
+        'email': leaderAdminEmail,
+        'phone': leaderAdminPhone,
+        'role': 'admin',
+        'admin_level': 'leader',
+      },
+      where: 'id = ?',
+      whereArgs: [leaderAdminId],
+    );
+  }
+
+  // ============================================================
+  // DELETE ALL USERS EXCEPT LEADER
+  // ============================================================
+
+  Future<int> deleteAllUsersExceptLeader(
+    String leaderEmail,
+  ) async {
+    final db = await _databaseHelper.database;
+
+    final normalizedEmail =
+        leaderEmail.trim().toLowerCase();
+
+    return db.delete(
+      'users',
+      where:
+          'LOWER(TRIM(email)) != ? AND id != ?',
+      whereArgs: [
+        normalizedEmail,
+        leaderAdminId,
+      ],
+    );
+  }
+
+  // ============================================================
+  // COUNT HELPER
+  // ============================================================
+
+  int _getCount(
+    List<Map<String, Object?>> result,
+  ) {
+    if (result.isEmpty) {
+      return 0;
+    }
+
+    final value = result.first['count'];
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(
+          value?.toString() ?? '',
+        ) ??
+        0;
+  }
+
+  // ============================================================
+  // TOTAL HELPER
+  // ============================================================
+
+  double _getTotal(
+    List<Map<String, Object?>> result,
+  ) {
+    if (result.isEmpty) {
+      return 0;
+    }
+
+    final value = result.first['total'];
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(
+          value?.toString() ?? '',
+        ) ??
+        0;
   }
 }
