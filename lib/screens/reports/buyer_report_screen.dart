@@ -3,18 +3,16 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/report_service.dart';
 
-class ReportsAnalysisScreen extends StatefulWidget {
-  const ReportsAnalysisScreen({
-    super.key,
-  });
+class BuyerReportScreen extends StatefulWidget {
+  const BuyerReportScreen({super.key});
 
   @override
-  State<ReportsAnalysisScreen> createState() =>
-      _ReportsAnalysisScreenState();
+  State<BuyerReportScreen> createState() =>
+      _BuyerReportScreenState();
 }
 
-class _ReportsAnalysisScreenState
-    extends State<ReportsAnalysisScreen> {
+class _BuyerReportScreenState
+    extends State<BuyerReportScreen> {
   final AuthService _authService =
       AuthService.instance;
 
@@ -27,8 +25,6 @@ class _ReportsAnalysisScreenState
 
   String? _errorMessage;
 
-  bool _isSeller = false;
-
   @override
   void initState() {
     super.initState();
@@ -36,7 +32,7 @@ class _ReportsAnalysisScreenState
   }
 
   // ============================================================
-  // LOAD REPORT
+  // LOAD BUYER REPORT
   // ============================================================
 
   Future<void> _loadReport() async {
@@ -53,94 +49,40 @@ class _ReportsAnalysisScreenState
       final currentUser =
           _authService.currentUser;
 
-      if (currentUser == null) {
+      if (currentUser == null ||
+          !currentUser.isBuyer) {
         if (!mounted) return;
 
         setState(() {
           _isLoading = false;
           _errorMessage =
-              'Please login to access Reports & Analysis.';
+              'You do not have permission to access Buyer Reports.';
         });
 
         return;
       }
 
-      // --------------------------------------------------------
-      // ADMIN REPORT
-      // --------------------------------------------------------
-
-      if (currentUser.isAnyAdmin) {
-        final report =
-            await _reportService.getAdminReport(
-          currentUser,
-        );
-
-        if (!mounted) return;
-
-        setState(() {
-          _report = report;
-          _isSeller = false;
-          _isLoading = false;
-        });
-
-        return;
-      }
-
-      // --------------------------------------------------------
-      // SELLER REPORT
-      // --------------------------------------------------------
-
-      if (currentUser.isSeller) {
-        final report =
-            await _reportService.getSellerReport(
-          currentUser,
-        );
-
-        if (!mounted) return;
-
-        setState(() {
-          _report = report;
-          _isSeller = true;
-          _isLoading = false;
-        });
-
-        return;
-      }
-
-      // --------------------------------------------------------
-      // BUYER - WILL BE IMPLEMENTED NEXT
-      // --------------------------------------------------------
-
-      if (currentUser.isBuyer) {
-        if (!mounted) return;
-
-        setState(() {
-          _isLoading = false;
-          _errorMessage =
-              'Buyer Reports & Analysis will be added next.';
-        });
-
-        return;
-      }
-
-      // --------------------------------------------------------
-      // UNKNOWN ROLE
-      // --------------------------------------------------------
+      final report =
+          await _reportService.getBuyerReport(
+        currentUser,
+      );
 
       if (!mounted) return;
 
       setState(() {
+        _report = report;
         _isLoading = false;
-        _errorMessage =
-            'You do not have permission to access Reports & Analysis.';
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('Buyer report error: $e');
+      debugPrint(stackTrace.toString());
+
       if (!mounted) return;
 
       setState(() {
         _isLoading = false;
         _errorMessage =
-            'Failed to load report: $e';
+            'Failed to load buyer report: $e';
       });
     }
   }
@@ -153,11 +95,9 @@ class _ReportsAnalysisScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          _isSeller
-              ? 'Seller Reports'
-              : 'Reports & Analysis',
-          style: const TextStyle(
+        title: const Text(
+          'Buyer Reports',
+          style: TextStyle(
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -188,15 +128,16 @@ class _ReportsAnalysisScreenState
     }
 
     if (_errorMessage != null) {
-      return _buildErrorState();
+      return _buildErrorState(context);
     }
 
     final report = _report;
 
     if (report == null) {
       return _buildErrorState(
+        context,
         message:
-            'Report information is unavailable.',
+            'Buyer report information is unavailable.',
       );
     }
 
@@ -216,274 +157,62 @@ class _ReportsAnalysisScreenState
 
           const SizedBox(height: 24),
 
-          if (_isSeller)
-            ..._buildSellerReport(
-              context,
-              report,
-            )
-          else
-            ..._buildAdminReport(
-              context,
-              report,
-            ),
+          _buildSectionTitle(
+            context,
+            'Shopping Summary',
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildSummaryGrid(
+            context,
+            report,
+          ),
+
+          const SizedBox(height: 28),
+
+          _buildSectionTitle(
+            context,
+            'Purchase Analysis',
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildPurchaseAnalysis(
+            context,
+            report,
+          ),
+
+          const SizedBox(height: 28),
+
+          _buildSectionTitle(
+            context,
+            'Order Analysis',
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildOrderAnalysis(
+            context,
+            report,
+          ),
+
+          const SizedBox(height: 28),
+
+          _buildSectionTitle(
+            context,
+            'Order Status Breakdown',
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildOrderStatusBreakdown(
+            context,
+            report,
+          ),
         ],
       ),
     );
-  }
-
-  // ============================================================
-  // ADMIN REPORT
-  // ============================================================
-
-  List<Widget> _buildAdminReport(
-    BuildContext context,
-    Map<String, dynamic> report,
-  ) {
-    return [
-      _buildSectionTitle(
-        context,
-        'Business Summary',
-      ),
-
-      const SizedBox(height: 12),
-
-      _buildAdminSummaryGrid(
-        context,
-        report,
-      ),
-
-      const SizedBox(height: 28),
-
-      _buildSectionTitle(
-        context,
-        'Sales Analysis',
-      ),
-
-      const SizedBox(height: 12),
-
-      _buildAdminSalesAnalysis(
-        context,
-        report,
-      ),
-
-      const SizedBox(height: 28),
-
-      _buildSectionTitle(
-        context,
-        'Order Analysis',
-      ),
-
-      const SizedBox(height: 12),
-
-      _buildAdminOrderAnalysis(
-        context,
-        report,
-      ),
-
-      const SizedBox(height: 28),
-
-      _buildSectionTitle(
-        context,
-        'Order Status Breakdown',
-      ),
-
-      const SizedBox(height: 12),
-
-      _buildOrderStatusBreakdown(
-        context,
-        report,
-      ),
-
-      const SizedBox(height: 28),
-
-      _buildSectionTitle(
-        context,
-        'User Analysis',
-      ),
-
-      const SizedBox(height: 12),
-
-      _buildUserAnalysis(
-        context,
-        report,
-      ),
-    ];
-  }
-
-  // ============================================================
-  // SELLER REPORT
-  // ============================================================
-
-  List<Widget> _buildSellerReport(
-    BuildContext context,
-    Map<String, dynamic> report,
-  ) {
-    final totalOrders =
-        _toInt(report['orders']);
-
-    final delivered =
-        _toInt(report['delivered']);
-
-    final cancelled =
-        _toInt(report['cancelled']);
-
-    final totalSales =
-        _toDouble(report['totalSales']);
-
-    final averageOrderValue =
-        delivered > 0
-            ? totalSales / delivered
-            : 0.0;
-
-    final activeOrders =
-        totalOrders - cancelled;
-
-    return [
-      // --------------------------------------------------------
-      // SELLER SUMMARY
-      // --------------------------------------------------------
-
-      _buildSectionTitle(
-        context,
-        'My Business Summary',
-      ),
-
-      const SizedBox(height: 12),
-
-      _buildSellerSummaryGrid(
-        context,
-        report,
-      ),
-
-      const SizedBox(height: 28),
-
-      // --------------------------------------------------------
-      // SALES ANALYSIS
-      // --------------------------------------------------------
-
-      _buildSectionTitle(
-        context,
-        'Sales Analysis',
-      ),
-
-      const SizedBox(height: 12),
-
-      Card(
-        child: Padding(
-          padding:
-              const EdgeInsets.all(18),
-          child: Column(
-            children: [
-              _buildAnalysisRow(
-                context,
-                icon:
-                    Icons.payments_outlined,
-                title: 'Total Sales',
-                value:
-                    _formatMoney(
-                  totalSales,
-                ),
-              ),
-
-              const Divider(height: 24),
-
-              _buildAnalysisRow(
-                context,
-                icon:
-                    Icons.inventory_2_outlined,
-                title: 'Units Sold',
-                value:
-                    _toInt(
-                      report['unitsSold'],
-                    ).toString(),
-              ),
-
-              const Divider(height: 24),
-
-              _buildAnalysisRow(
-                context,
-                icon:
-                    Icons.check_circle_outline,
-                title: 'Completed Orders',
-                value:
-                    delivered.toString(),
-              ),
-
-              const Divider(height: 24),
-
-              _buildAnalysisRow(
-                context,
-                icon:
-                    Icons.calculate_outlined,
-                title: 'Average Order Value',
-                value:
-                    _formatMoney(
-                  averageOrderValue,
-                ),
-              ),
-
-              const Divider(height: 24),
-
-              _buildAnalysisRow(
-                context,
-                icon:
-                    Icons.cancel_outlined,
-                title: 'Cancelled Orders',
-                value:
-                    cancelled.toString(),
-              ),
-
-              const Divider(height: 24),
-
-              _buildAnalysisRow(
-                context,
-                icon:
-                    Icons.trending_up_outlined,
-                title: 'Active Orders',
-                value:
-                    activeOrders.toString(),
-              ),
-            ],
-          ),
-        ),
-      ),
-
-      const SizedBox(height: 28),
-
-      // --------------------------------------------------------
-      // ORDER ANALYSIS
-      // --------------------------------------------------------
-
-      _buildSectionTitle(
-        context,
-        'Order Analysis',
-      ),
-
-      const SizedBox(height: 12),
-
-      _buildSellerOrderAnalysis(
-        context,
-        report,
-      ),
-
-      const SizedBox(height: 28),
-
-      // --------------------------------------------------------
-      // STATUS BREAKDOWN
-      // --------------------------------------------------------
-
-      _buildSectionTitle(
-        context,
-        'Order Status Breakdown',
-      ),
-
-      const SizedBox(height: 12),
-
-      _buildOrderStatusBreakdown(
-        context,
-        report,
-      ),
-    ];
   }
 
   // ============================================================
@@ -519,9 +248,7 @@ class _ReportsAnalysisScreenState
                   colorScheme.primary,
             ),
             child: Icon(
-              _isSeller
-                  ? Icons.storefront_outlined
-                  : Icons.analytics_outlined,
+              Icons.analytics_outlined,
               color:
                   colorScheme.onPrimary,
               size: 30,
@@ -536,9 +263,7 @@ class _ReportsAnalysisScreenState
                   CrossAxisAlignment.start,
               children: [
                 Text(
-                  _isSeller
-                      ? 'Seller Reports'
-                      : 'Business Reports',
+                  'My Shopping Reports',
                   style:
                       Theme.of(context)
                           .textTheme
@@ -552,9 +277,7 @@ class _ReportsAnalysisScreenState
                 const SizedBox(height: 6),
 
                 Text(
-                  _isSeller
-                      ? 'Monitor your products, orders, sales and business performance.'
-                      : 'Monitor sales, orders, users and business performance.',
+                  'Track your orders, spending and purchase activity.',
                   style:
                       Theme.of(context)
                           .textTheme
@@ -581,7 +304,7 @@ class _ReportsAnalysisScreenState
       style:
           Theme.of(context)
               .textTheme
-              .titleMedium
+              .titleLarge
               ?.copyWith(
                 fontWeight:
                     FontWeight.bold,
@@ -590,10 +313,10 @@ class _ReportsAnalysisScreenState
   }
 
   // ============================================================
-  // SELLER SUMMARY GRID
+  // SUMMARY GRID
   // ============================================================
 
-  Widget _buildSellerSummaryGrid(
+  Widget _buildSummaryGrid(
     BuildContext context,
     Map<String, dynamic> report,
   ) {
@@ -606,19 +329,6 @@ class _ReportsAnalysisScreenState
           const NeverScrollableScrollPhysics(),
       childAspectRatio: 1.25,
       children: [
-        _buildSummaryCard(
-          context,
-          title: 'My Sales',
-          value:
-              _formatMoney(
-            _toDouble(
-              report['totalSales'],
-            ),
-          ),
-          icon:
-              Icons.payments_outlined,
-        ),
-
         _buildSummaryCard(
           context,
           title: 'My Orders',
@@ -629,91 +339,37 @@ class _ReportsAnalysisScreenState
           icon:
               Icons.shopping_cart_outlined,
         ),
-
         _buildSummaryCard(
           context,
-          title: 'My Products',
-          value:
-              _toInt(
-                report['products'],
-              ).toString(),
-          icon:
-              Icons.inventory_2_outlined,
-        ),
-
-        _buildSummaryCard(
-          context,
-          title: 'Units Sold',
-          value:
-              _toInt(
-                report['unitsSold'],
-              ).toString(),
-          icon:
-              Icons.sell_outlined,
-        ),
-      ],
-    );
-  }
-
-  // ============================================================
-  // ADMIN SUMMARY GRID
-  // ============================================================
-
-  Widget _buildAdminSummaryGrid(
-    BuildContext context,
-    Map<String, dynamic> report,
-  ) {
-    return GridView.count(
-      crossAxisCount: 2,
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      shrinkWrap: true,
-      physics:
-          const NeverScrollableScrollPhysics(),
-      childAspectRatio: 1.25,
-      children: [
-        _buildSummaryCard(
-          context,
-          title: 'Total Sales',
+          title: 'Total Spent',
           value:
               _formatMoney(
-            _toDouble(
-              report['totalSales'],
-            ),
-          ),
+                _toDouble(
+                  report['totalSpent'],
+                ),
+              ),
           icon:
               Icons.payments_outlined,
         ),
-
         _buildSummaryCard(
           context,
-          title: 'Total Orders',
+          title: 'Items Purchased',
           value:
               _toInt(
-                report['orders'],
-              ).toString(),
-          icon:
-              Icons.shopping_cart_outlined,
-        ),
-
-        _buildSummaryCard(
-          context,
-          title: 'Products',
-          value:
-              _toInt(
-                report['products'],
+                report['itemsPurchased'],
               ).toString(),
           icon:
               Icons.inventory_2_outlined,
         ),
-
         _buildSummaryCard(
           context,
-          title: 'Total Users',
+          title: 'Delivered',
           value:
-              _totalUsers(report).toString(),
+              _toInt(
+                report['delivered'],
+              ).toString(),
           icon:
-              Icons.people_outline,
+              Icons.done_all_outlined,
         ),
       ],
     );
@@ -791,30 +447,32 @@ class _ReportsAnalysisScreenState
   }
 
   // ============================================================
-  // ADMIN SALES ANALYSIS
+  // PURCHASE ANALYSIS
   // ============================================================
 
-  Widget _buildAdminSalesAnalysis(
+  Widget _buildPurchaseAnalysis(
     BuildContext context,
     Map<String, dynamic> report,
   ) {
-    final totalOrders =
-        _toInt(report['orders']);
+    final totalSpent =
+        _toDouble(
+      report['totalSpent'],
+    );
 
-    final cancelledOrders =
-        _toInt(report['cancelled']);
+    final delivered =
+        _toInt(
+      report['delivered'],
+    );
 
-    final deliveredOrders =
-        _toInt(report['delivered']);
-
-    final totalSales =
-        _toDouble(report['totalSales']);
-
-    final averageOrderValue =
-        deliveredOrders > 0
-            ? totalSales /
-                deliveredOrders
+    final averagePurchase =
+        delivered > 0
+            ? totalSpent / delivered
             : 0.0;
+
+    final itemsPurchased =
+        _toInt(
+      report['itemsPurchased'],
+    );
 
     return Card(
       child: Padding(
@@ -826,10 +484,10 @@ class _ReportsAnalysisScreenState
               context,
               icon:
                   Icons.payments_outlined,
-              title: 'Total Sales',
+              title: 'Total Spent',
               value:
                   _formatMoney(
-                totalSales,
+                totalSpent,
               ),
             ),
 
@@ -838,11 +496,10 @@ class _ReportsAnalysisScreenState
             _buildAnalysisRow(
               context,
               icon:
-                  Icons.check_circle_outline,
-              title:
-                  'Completed Sales Orders',
+                  Icons.done_all_outlined,
+              title: 'Completed Purchases',
               value:
-                  deliveredOrders.toString(),
+                  delivered.toString(),
             ),
 
             const Divider(height: 24),
@@ -852,10 +509,10 @@ class _ReportsAnalysisScreenState
               icon:
                   Icons.calculate_outlined,
               title:
-                  'Average Order Value',
+                  'Average Purchase',
               value:
                   _formatMoney(
-                averageOrderValue,
+                averagePurchase,
               ),
             ),
 
@@ -864,21 +521,11 @@ class _ReportsAnalysisScreenState
             _buildAnalysisRow(
               context,
               icon:
-                  Icons.cancel_outlined,
-              title: 'Cancelled Orders',
+                  Icons.inventory_2_outlined,
+              title: 'Items Purchased',
               value:
-                  cancelledOrders.toString(),
-            ),
-
-            const Divider(height: 24),
-
-            _buildAnalysisRow(
-              context,
-              icon:
-                  Icons.receipt_long_outlined,
-              title: 'All Orders',
-              value:
-                  totalOrders.toString(),
+                  itemsPurchased
+                      .toString(),
             ),
           ],
         ),
@@ -887,10 +534,10 @@ class _ReportsAnalysisScreenState
   }
 
   // ============================================================
-  // SELLER ORDER ANALYSIS
+  // ORDER ANALYSIS
   // ============================================================
 
-  Widget _buildSellerOrderAnalysis(
+  Widget _buildOrderAnalysis(
     BuildContext context,
     Map<String, dynamic> report,
   ) {
@@ -1004,28 +651,16 @@ class _ReportsAnalysisScreenState
             _buildAnalysisRow(
               context,
               icon:
-                  Icons.trending_up_outlined,
+                  Icons.shopping_bag_outlined,
               title: 'Active Orders',
               value:
-                  active.toString(),
+                  active < 0
+                      ? '0'
+                      : active.toString(),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  // ============================================================
-  // ADMIN ORDER ANALYSIS
-  // ============================================================
-
-  Widget _buildAdminOrderAnalysis(
-    BuildContext context,
-    Map<String, dynamic> report,
-  ) {
-    return _buildSellerOrderAnalysis(
-      context,
-      report,
     );
   }
 
@@ -1133,8 +768,10 @@ class _ReportsAnalysisScreenState
   }) {
     final percentage =
         total > 0
-            ? (count / total)
-                .clamp(0.0, 1.0)
+            ? (count / total).clamp(
+                0.0,
+                1.0,
+              )
             : 0.0;
 
     return Column(
@@ -1176,77 +813,6 @@ class _ReportsAnalysisScreenState
           ),
         ),
       ],
-    );
-  }
-
-  // ============================================================
-  // USER ANALYSIS
-  // ============================================================
-
-  Widget _buildUserAnalysis(
-    BuildContext context,
-    Map<String, dynamic> report,
-  ) {
-    final buyers =
-        _toInt(report['buyers']);
-
-    final sellers =
-        _toInt(report['sellers']);
-
-    final admins =
-        _toInt(report['admins']);
-
-    return Card(
-      child: Padding(
-        padding:
-            const EdgeInsets.all(18),
-        child: Column(
-          children: [
-            _buildAnalysisRow(
-              context,
-              icon:
-                  Icons.people_outline,
-              title: 'Total Users',
-              value:
-                  _totalUsers(report)
-                      .toString(),
-            ),
-
-            const Divider(height: 24),
-
-            _buildAnalysisRow(
-              context,
-              icon:
-                  Icons.person_outline,
-              title: 'Buyers',
-              value:
-                  buyers.toString(),
-            ),
-
-            const Divider(height: 24),
-
-            _buildAnalysisRow(
-              context,
-              icon:
-                  Icons.storefront_outlined,
-              title: 'Sellers',
-              value:
-                  sellers.toString(),
-            ),
-
-            const Divider(height: 24),
-
-            _buildAnalysisRow(
-              context,
-              icon:
-                  Icons.admin_panel_settings_outlined,
-              title: 'Administrators',
-              value:
-                  admins.toString(),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1311,7 +877,8 @@ class _ReportsAnalysisScreenState
   // ERROR STATE
   // ============================================================
 
-  Widget _buildErrorState({
+  Widget _buildErrorState(
+    BuildContext context, {
     String? message,
   }) {
     final error =
@@ -1362,18 +929,6 @@ class _ReportsAnalysisScreenState
   }
 
   // ============================================================
-  // TOTAL USERS
-  // ============================================================
-
-  int _totalUsers(
-    Map<String, dynamic> report,
-  ) {
-    return _toInt(report['buyers']) +
-        _toInt(report['sellers']) +
-        _toInt(report['admins']);
-  }
-
-  // ============================================================
   // INTEGER CONVERSION
   // ============================================================
 
@@ -1410,6 +965,30 @@ class _ReportsAnalysisScreenState
   String _formatMoney(
     double amount,
   ) {
-    return 'TZS ${amount.toStringAsFixed(0)}';
+    final rounded =
+        amount.round();
+
+    final text =
+        rounded.toString();
+
+    final buffer =
+        StringBuffer();
+
+    for (
+      int i = 0;
+      i < text.length;
+      i++
+    ) {
+      if (
+        i > 0 &&
+        (text.length - i) % 3 == 0
+      ) {
+        buffer.write(',');
+      }
+
+      buffer.write(text[i]);
+    }
+
+    return 'TZS ${buffer.toString()}';
   }
 }

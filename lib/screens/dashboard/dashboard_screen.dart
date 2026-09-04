@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 
 import '../../app/routes.dart';
@@ -5,21 +6,20 @@ import '../../models/order.dart';
 import '../../models/product.dart';
 import '../../services/auth_service.dart';
 import '../../services/dashboard_service.dart';
+import '../../widgets/notification_bell.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  State<DashboardScreen> createState() =>
-      _DashboardScreenState();
+  State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final DashboardService _dashboardService =
       DashboardService.instance;
 
-  final AuthService _authService =
-      AuthService.instance;
+  final AuthService _authService = AuthService.instance;
 
   DashboardStats? _stats;
 
@@ -54,8 +54,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     try {
-      final stats =
-          await _dashboardService.getDashboardStats();
+      final stats = await _dashboardService.getDashboardStats();
 
       final lowStockProducts =
           await _dashboardService.getLowStockProducts();
@@ -186,21 +185,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Dashboard',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _isLoading ? null : _refresh,
-            icon: const Icon(Icons.refresh),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
+  title: const Text(
+    'Dashboard',
+    style: TextStyle(fontWeight: FontWeight.bold),
+  ),
+  actions: [
+    const NotificationBell(),
+
+    IconButton(
+      tooltip: 'Refresh',
+      onPressed: _isLoading ? null : _refresh,
+      icon: const Icon(Icons.refresh),
+    ),
+
+    const SizedBox(width: 8),
+  ],
+),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _refresh,
@@ -217,8 +217,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildBody(BuildContext context) {
     if (_isLoading) {
       return ListView(
-        physics:
-            const AlwaysScrollableScrollPhysics(),
+        physics: const AlwaysScrollableScrollPhysics(),
         children: const [
           SizedBox(height: 250),
           Center(
@@ -230,8 +229,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (_errorMessage != null) {
       return ListView(
-        physics:
-            const AlwaysScrollableScrollPhysics(),
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           const SizedBox(height: 180),
           _buildErrorState(context),
@@ -241,8 +239,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (_stats == null) {
       return ListView(
-        physics:
-            const AlwaysScrollableScrollPhysics(),
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           const SizedBox(height: 180),
           _buildErrorState(context),
@@ -265,14 +262,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ADMIN DASHBOARD
   // ============================================================
 
-  Widget _buildAdminDashboard(
-    BuildContext context,
-  ) {
+  Widget _buildAdminDashboard(BuildContext context) {
     final stats = _stats!;
 
     return ListView(
-      physics:
-          const AlwaysScrollableScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
         _buildGreeting(context),
@@ -298,38 +292,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
           shrinkWrap: true,
-          physics:
-              const NeverScrollableScrollPhysics(),
+          physics: const NeverScrollableScrollPhysics(),
           childAspectRatio: 1.35,
           children: [
             _buildStatisticCard(
               context,
-              icon:
-                  Icons.shopping_cart_outlined,
+              icon: Icons.shopping_cart_outlined,
               title: 'Orders',
-              value:
-                  stats.totalOrders.toString(),
-              subtitle:
-                  '${stats.todayOrders} today',
+              value: stats.totalOrders.toString(),
+              subtitle: '${stats.todayOrders} today',
             ),
-
             _buildStatisticCard(
               context,
-              icon:
-                  Icons.inventory_2_outlined,
+              icon: Icons.inventory_2_outlined,
               title: 'Products',
-              value:
-                  stats.totalProducts.toString(),
-              subtitle:
-                  '${stats.lowStockCount} low stock',
+              value: stats.totalProducts.toString(),
+              subtitle: '${stats.lowStockCount} low stock',
             ),
-
             _buildStatisticCard(
               context,
               icon: Icons.account_balance_wallet_outlined,
               title: 'Revenue',
-              value:
-                  _formatCompactCurrency(
+              value: _formatCompactCurrency(
                 stats.totalRevenue,
               ),
               subtitle: 'Total revenue',
@@ -383,14 +367,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // SELLER DASHBOARD
   // ============================================================
 
-  Widget _buildSellerDashboard(
-    BuildContext context,
-  ) {
+  Widget _buildSellerDashboard(BuildContext context) {
     final stats = _stats!;
 
     return ListView(
-      physics:
-          const AlwaysScrollableScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
         _buildGreeting(context),
@@ -416,54 +397,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
           shrinkWrap: true,
-          physics:
-              const NeverScrollableScrollPhysics(),
+          physics: const NeverScrollableScrollPhysics(),
           childAspectRatio: 1.35,
           children: [
             _buildStatisticCard(
               context,
-              icon:
-                  Icons.inventory_2_outlined,
+              icon: Icons.inventory_2_outlined,
               title: 'My Products',
-              value:
-                  stats.totalProducts.toString(),
-              subtitle:
-                  '${stats.lowStockCount} low stock',
+              value: stats.totalProducts.toString(),
+              subtitle: '${stats.lowStockCount} low stock',
             ),
-
             _buildStatisticCard(
               context,
-              icon:
-                  Icons.shopping_cart_outlined,
+              icon: Icons.shopping_cart_outlined,
               title: 'My Orders',
-              value:
-                  stats.totalOrders.toString(),
-              subtitle:
-                  '${stats.todayOrders} today',
+              value: stats.totalOrders.toString(),
+              subtitle: '${stats.todayOrders} today',
             ),
-
             _buildStatisticCard(
               context,
               icon: Icons.payments_outlined,
               title: 'My Revenue',
-              value:
-                  _formatCompactCurrency(
+              value: _formatCompactCurrency(
                 stats.totalRevenue,
               ),
               subtitle: 'Total sales',
             ),
-
             _buildStatisticCard(
               context,
               icon: Icons.trending_up,
               title: 'Today',
-              value:
-                  _formatCompactCurrency(
+              value: _formatCompactCurrency(
                 stats.todaySales,
               ),
               subtitle: 'Today sales',
             ),
           ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // ======================================================
+        // SELLER REPORTS CARD
+        // ======================================================
+
+        _buildReportsCard(
+          context,
+          title: 'Reports',
+          description:
+              'View your sales, orders and business summary.',
         ),
 
         const SizedBox(height: 24),
@@ -512,14 +494,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // BUYER DASHBOARD
   // ============================================================
 
-  Widget _buildBuyerDashboard(
-    BuildContext context,
-  ) {
+  Widget _buildBuyerDashboard(BuildContext context) {
     final stats = _stats!;
 
     return ListView(
-      physics:
-          const AlwaysScrollableScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
         _buildGreeting(context),
@@ -545,53 +524,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
           shrinkWrap: true,
-          physics:
-              const NeverScrollableScrollPhysics(),
+          physics: const NeverScrollableScrollPhysics(),
           childAspectRatio: 1.35,
           children: [
             _buildStatisticCard(
               context,
-              icon:
-                  Icons.receipt_long_outlined,
+              icon: Icons.receipt_long_outlined,
               title: 'My Orders',
-              value:
-                  stats.totalOrders.toString(),
-              subtitle:
-                  '${stats.todayOrders} today',
+              value: stats.totalOrders.toString(),
+              subtitle: '${stats.todayOrders} today',
             ),
-
             _buildStatisticCard(
               context,
               icon: Icons.payments_outlined,
               title: 'My Spending',
-              value:
-                  _formatCompactCurrency(
+              value: _formatCompactCurrency(
                 stats.totalRevenue,
               ),
               subtitle: 'Total spending',
             ),
-
             _buildStatisticCard(
               context,
-              icon:
-                  Icons.inventory_2_outlined,
+              icon: Icons.inventory_2_outlined,
               title: 'Products',
-              value:
-                  stats.totalProducts.toString(),
+              value: stats.totalProducts.toString(),
               subtitle: 'Available products',
             ),
-
             _buildStatisticCard(
               context,
               icon: Icons.today_outlined,
               title: 'Today',
-              value:
-                  _formatCompactCurrency(
+              value: _formatCompactCurrency(
                 stats.todaySales,
               ),
               subtitle: 'Today spending',
             ),
           ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // ======================================================
+        // BUYER REPORTS CARD
+        // ======================================================
+
+        _buildReportsCard(
+          context,
+          title: 'Reports',
+          description:
+              'View your orders, spending and shopping summary.',
         ),
 
         const SizedBox(height: 24),
@@ -627,12 +608,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // GREETING
   // ============================================================
 
-  Widget _buildGreeting(
-    BuildContext context,
-  ) {
+  Widget _buildGreeting(BuildContext context) {
     return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Good day, $_userName 👋',
@@ -640,8 +618,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               .textTheme
               .headlineSmall
               ?.copyWith(
-                fontWeight:
-                    FontWeight.bold,
+                fontWeight: FontWeight.bold,
               ),
         ),
 
@@ -653,10 +630,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               : _isSeller
                   ? 'Here is your sales overview.'
                   : 'Here is your business overview.',
-          style:
-              Theme.of(context)
-                  .textTheme
-                  .bodyMedium,
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
 
         const SizedBox(height: 6),
@@ -664,12 +638,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Text(
           _role,
           style: TextStyle(
-            color:
-                Theme.of(context)
-                    .colorScheme
-                    .primary,
-            fontWeight:
-                FontWeight.w600,
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],
@@ -685,22 +655,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String title,
   }) {
     final primaryColor =
-        Theme.of(context)
-            .colorScheme
-            .primary;
+        Theme.of(context).colorScheme.primary;
 
     return Container(
       width: double.infinity,
-      padding:
-          const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: primaryColor,
-        borderRadius:
-            BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
@@ -719,8 +684,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             style: const TextStyle(
               color: Colors.white,
               fontSize: 28,
-              fontWeight:
-                  FontWeight.bold,
+              fontWeight: FontWeight.bold,
             ),
           ),
 
@@ -729,18 +693,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(
+                padding: const EdgeInsets.symmetric(
                   horizontal: 10,
                   vertical: 5,
                 ),
                 decoration: BoxDecoration(
-                  color:
-                      Colors.white.withValues(
+                  color: Colors.white.withValues(
                     alpha: 0.12,
                   ),
-                  borderRadius:
-                      BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Row(
                   children: [
@@ -754,8 +715,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       'Today',
                       style: TextStyle(
                         color: Colors.white,
-                        fontWeight:
-                            FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ],
@@ -794,8 +754,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .textTheme
           .titleLarge
           ?.copyWith(
-            fontWeight:
-                FontWeight.bold,
+            fontWeight: FontWeight.bold,
           ),
     );
   }
@@ -812,20 +771,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String subtitle,
   }) {
     final primaryColor =
-        Theme.of(context)
-            .colorScheme
-            .primary;
+        Theme.of(context).colorScheme.primary;
 
     return Container(
-      padding:
-          const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color:
-            Theme.of(context)
-                .colorScheme
-                .surface,
-        borderRadius:
-            BorderRadius.circular(16),
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: Theme.of(context)
               .dividerColor
@@ -833,19 +785,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color:
-                  primaryColor.withValues(
+              color: primaryColor.withValues(
                 alpha: 0.1,
               ),
-              borderRadius:
-                  BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
               icon,
@@ -858,14 +807,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Text(
             value,
             maxLines: 1,
-            overflow:
-                TextOverflow.ellipsis,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context)
                 .textTheme
                 .titleLarge
                 ?.copyWith(
-                  fontWeight:
-                      FontWeight.bold,
+                  fontWeight: FontWeight.bold,
                 ),
           ),
 
@@ -873,10 +820,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           Text(
             title,
-            style:
-                Theme.of(context)
-                    .textTheme
-                    .bodyMedium,
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
 
           const SizedBox(height: 2),
@@ -884,14 +828,111 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Text(
             subtitle,
             maxLines: 1,
-            overflow:
-                TextOverflow.ellipsis,
-            style:
-                Theme.of(context)
-                    .textTheme
-                    .bodySmall,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // REPORTS CARD
+  // ============================================================
+
+  Widget _buildReportsCard(
+    BuildContext context, {
+    required String title,
+    required String description,
+  }) {
+    final primaryColor =
+        Theme.of(context).colorScheme.primary;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _openReports,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: primaryColor.withValues(
+                alpha: 0.25,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(
+                    alpha: 0.1,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  Icons.bar_chart_rounded,
+                  color: primaryColor,
+                  size: 29,
+                ),
+              ),
+
+              const SizedBox(width: 14),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    Text(
+                      description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall,
+                    ),
+
+                    const SizedBox(height: 5),
+
+                    Text(
+                      'View reports',
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 17,
+                color: primaryColor,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -908,8 +949,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Expanded(
           child: _buildQuickAction(
             context,
-            icon:
-                Icons.inventory_2_outlined,
+            icon: Icons.inventory_2_outlined,
             title: 'Products',
             onPressed: _openProducts,
           ),
@@ -920,8 +960,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Expanded(
           child: _buildQuickAction(
             context,
-            icon:
-                Icons.receipt_long_outlined,
+            icon: Icons.receipt_long_outlined,
             title: 'Orders',
             onPressed: _openOrders,
           ),
@@ -942,8 +981,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Expanded(
           child: _buildQuickAction(
             context,
-            icon:
-                Icons.inventory_2_outlined,
+            icon: Icons.inventory_2_outlined,
             title: 'My Products',
             onPressed: _openProducts,
           ),
@@ -954,8 +992,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Expanded(
           child: _buildQuickAction(
             context,
-            icon:
-                Icons.receipt_long_outlined,
+            icon: Icons.receipt_long_outlined,
             title: 'Orders',
             onPressed: _openOrders,
           ),
@@ -976,8 +1013,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Expanded(
           child: _buildQuickAction(
             context,
-            icon:
-                Icons.shopping_bag_outlined,
+            icon: Icons.shopping_bag_outlined,
             title: 'Shop Products',
             onPressed: _openProducts,
           ),
@@ -988,8 +1024,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Expanded(
           child: _buildQuickAction(
             context,
-            icon:
-                Icons.receipt_long_outlined,
+            icon: Icons.receipt_long_outlined,
             title: 'My Orders',
             onPressed: _openOrders,
           ),
@@ -1009,27 +1044,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required VoidCallback onPressed,
   }) {
     final primaryColor =
-        Theme.of(context)
-            .colorScheme
-            .primary;
+        Theme.of(context).colorScheme.primary;
 
     return InkWell(
       onTap: onPressed,
-      borderRadius:
-          BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(
+        padding: const EdgeInsets.symmetric(
           horizontal: 8,
           vertical: 14,
         ),
         decoration: BoxDecoration(
-          color:
-              Theme.of(context)
-                  .colorScheme
-                  .surface,
-          borderRadius:
-              BorderRadius.circular(14),
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: Theme.of(context)
                 .dividerColor
@@ -1048,12 +1075,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             Text(
               title,
-              textAlign:
-                  TextAlign.center,
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 12,
-                fontWeight:
-                    FontWeight.w600,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -1072,8 +1097,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_lowStockProducts.isEmpty) {
       return _buildEmptySection(
         context,
-        icon:
-            Icons.check_circle_outline,
+        icon: Icons.check_circle_outline,
         message: _isBuyer
             ? 'Stock information is not available for buyers.'
             : 'No low-stock products.',
@@ -1081,8 +1105,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     return Column(
-      children:
-          _lowStockProducts.map(
+      children: _lowStockProducts.map(
         (product) {
           return _buildLowStockCard(
             context,
@@ -1104,22 +1127,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required int quantity,
   }) {
     return Container(
-      margin:
-          const EdgeInsets.only(
-        bottom: 10,
-      ),
-      padding:
-          const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color:
-            Theme.of(context)
-                .colorScheme
-                .surface,
-        borderRadius:
-            BorderRadius.circular(14),
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color:
-              Colors.orange.shade100,
+          color: Colors.orange.shade100,
         ),
       ),
       child: Row(
@@ -1128,12 +1142,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color:
-                  Colors.orange.shade50,
-              borderRadius:
-                  BorderRadius.circular(
-                10,
-              ),
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(
               Icons.warning_amber_rounded,
@@ -1150,10 +1160,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Text(
                   productName,
-                  style:
-                      const TextStyle(
-                    fontWeight:
-                        FontWeight.w600,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
 
@@ -1161,10 +1169,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                 Text(
                   'Only $quantity items remaining',
-                  style:
-                      Theme.of(context)
-                          .textTheme
-                          .bodySmall,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall,
                 ),
               ],
             ),
@@ -1189,8 +1196,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_recentOrders.isEmpty) {
       return _buildEmptySection(
         context,
-        icon:
-            Icons.receipt_long_outlined,
+        icon: Icons.receipt_long_outlined,
         message: _isBuyer
             ? 'You have no orders yet.'
             : 'No orders have been created yet.',
@@ -1198,15 +1204,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     return Column(
-      children:
-          _recentOrders.map(
+      children: _recentOrders.map(
         (order) {
           return _buildOrderCard(
             context,
             orderNumber: order.id,
             buyer: order.buyerId,
-            amount:
-                _formatCurrency(
+            amount: _formatCurrency(
               order.totalAmount,
             ),
             status: order.status,
@@ -1227,23 +1231,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String amount,
     required String status,
   }) {
-    final statusColor =
-        _getStatusColor(status);
+    final statusColor = _getStatusColor(status);
 
     return Container(
-      margin:
-          const EdgeInsets.only(
-        bottom: 10,
-      ),
-      padding:
-          const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color:
-            Theme.of(context)
-                .colorScheme
-                .surface,
-        borderRadius:
-            BorderRadius.circular(14),
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: Theme.of(context)
               .dividerColor
@@ -1255,26 +1250,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Container(
             width: 42,
             height: 42,
-            decoration:
-                BoxDecoration(
-              color:
-                  Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withValues(
-                alpha: 0.1,
-              ),
-              borderRadius:
-                  BorderRadius.circular(
-                10,
-              ),
+            decoration: BoxDecoration(
+              color: Theme.of(context)
+                  .colorScheme
+                  .primary
+                  .withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
               Icons.receipt_long_outlined,
-              color:
-                  Theme.of(context)
-                      .colorScheme
-                      .primary,
+              color: Theme.of(context)
+                  .colorScheme
+                  .primary,
             ),
           ),
 
@@ -1287,10 +1274,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Text(
                   orderNumber,
-                  style:
-                      const TextStyle(
-                    fontWeight:
-                        FontWeight.bold,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
 
@@ -1298,22 +1283,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                 Text(
                   buyer,
-                  overflow:
-                      TextOverflow.ellipsis,
-                  style:
-                      Theme.of(context)
-                          .textTheme
-                          .bodySmall,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall,
                 ),
 
                 const SizedBox(height: 3),
 
                 Text(
                   amount,
-                  style:
-                      const TextStyle(
-                    fontWeight:
-                        FontWeight.w600,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -1323,28 +1304,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(width: 8),
 
           Container(
-            padding:
-                const EdgeInsets.symmetric(
+            padding: const EdgeInsets.symmetric(
               horizontal: 9,
               vertical: 5,
             ),
             decoration: BoxDecoration(
-              color:
-                  statusColor.withValues(
+              color: statusColor.withValues(
                 alpha: 0.1,
               ),
-              borderRadius:
-                  BorderRadius.circular(
-                20,
-              ),
+              borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
               status.toUpperCase(),
               style: TextStyle(
                 color: statusColor,
                 fontSize: 11,
-                fontWeight:
-                    FontWeight.bold,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
@@ -1364,15 +1339,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }) {
     return Container(
       width: double.infinity,
-      padding:
-          const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color:
-            Theme.of(context)
-                .colorScheme
-                .surface,
-        borderRadius:
-            BorderRadius.circular(14),
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: Theme.of(context)
               .dividerColor
@@ -1391,12 +1361,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           Text(
             message,
-            textAlign:
-                TextAlign.center,
-            style:
-                Theme.of(context)
-                    .textTheme
-                    .bodyMedium,
+            textAlign: TextAlign.center,
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium,
           ),
         ],
       ),
@@ -1423,15 +1391,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               .textTheme
               .titleLarge
               ?.copyWith(
-                fontWeight:
-                    FontWeight.bold,
+                fontWeight: FontWeight.bold,
               ),
         ),
 
         TextButton(
           onPressed: onPressed,
-          child:
-              Text(actionText),
+          child: Text(actionText),
         ),
       ],
     );
@@ -1446,15 +1412,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ) {
     return Center(
       child: Padding(
-        padding:
-            const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(24),
         child: Column(
           children: [
             Icon(
               Icons.error_outline,
               size: 64,
-              color:
-                  Colors.red.shade400,
+              color: Colors.red.shade400,
             ),
 
             const SizedBox(height: 16),
@@ -1463,8 +1427,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               'Unable to load dashboard',
               style: TextStyle(
                 fontSize: 18,
-                fontWeight:
-                    FontWeight.bold,
+                fontWeight: FontWeight.bold,
               ),
             ),
 
@@ -1473,22 +1436,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Text(
               _errorMessage ??
                   'Something went wrong.',
-              textAlign:
-                  TextAlign.center,
+              textAlign: TextAlign.center,
             ),
 
             const SizedBox(height: 20),
 
             FilledButton.icon(
               onPressed: _refresh,
-              icon:
-                  const Icon(
-                Icons.refresh,
-              ),
-              label:
-                  const Text(
-                'Try Again',
-              ),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try Again'),
             ),
           ],
         ),
@@ -1500,9 +1456,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // STATUS COLOR
   // ============================================================
 
-  Color _getStatusColor(
-    String status,
-  ) {
+  Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'delivered':
       case 'completed':
@@ -1544,4 +1498,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       AppRoutes.orders,
     );
   }
+
+  void _openReports() {
+    Navigator.pushNamed(
+      context,
+      AppRoutes.reports,
+    );
+  }
 }
+

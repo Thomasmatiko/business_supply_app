@@ -4,7 +4,6 @@ import '../../models/user.dart';
 import '../../services/admin_service.dart';
 import '../../services/auth_service.dart';
 
-
 class AdminManagementScreen extends StatefulWidget {
   const AdminManagementScreen({super.key});
 
@@ -15,7 +14,6 @@ class AdminManagementScreen extends StatefulWidget {
 
 class _AdminManagementScreenState
     extends State<AdminManagementScreen> {
-
   final AdminService _adminService = AdminService.instance;
   final AuthService _authService = AuthService.instance;
 
@@ -79,7 +77,8 @@ class _AdminManagementScreenState
     }
 
     return _users.where((user) {
-      return user.name.toLowerCase().contains(query) ||
+      return user.id.toLowerCase().contains(query) ||
+          user.name.toLowerCase().contains(query) ||
           user.email.toLowerCase().contains(query) ||
           user.phone.toLowerCase().contains(query) ||
           user.role.toLowerCase().contains(query) ||
@@ -156,8 +155,7 @@ class _AdminManagementScreenState
       ..showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor:
-              isError ? Colors.red : null,
+          backgroundColor: isError ? Colors.red : null,
         ),
       );
   }
@@ -381,6 +379,7 @@ class _AdminManagementScreenState
       message:
           'Are you sure you want to permanently remove '
           '${user.name}?\n\n'
+          'User ID: ${user.id}\n'
           'Role: $roleName\n'
           'Email: ${user.email}\n\n'
           'This account will be deleted from the system.',
@@ -526,16 +525,14 @@ class _AdminManagementScreenState
                     : RefreshIndicator(
                         onRefresh: _loadUsers,
                         child: ListView.builder(
-                          padding:
-                              const EdgeInsets.fromLTRB(
+                          padding: const EdgeInsets.fromLTRB(
                             16,
                             8,
                             16,
                             24,
                           ),
                           itemCount: users.length,
-                          itemBuilder:
-                              (context, index) {
+                          itemBuilder: (context, index) {
                             return _buildUserCard(
                               context,
                               users[index],
@@ -576,8 +573,7 @@ class _AdminManagementScreenState
         8,
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'User Management',
@@ -632,13 +628,10 @@ class _AdminManagementScreenState
               Expanded(
                 child: _buildSummaryCard(
                   context,
-                  icon:
-                      Icons.admin_panel_settings,
+                  icon: Icons.admin_panel_settings,
                   label: 'Admins',
                   value:
-                      (normalAdminCount +
-                              leaderCount)
-                          .toString(),
+                      (normalAdminCount + leaderCount).toString(),
                 ),
               ),
             ],
@@ -721,9 +714,8 @@ class _AdminManagementScreenState
           });
         },
         decoration: InputDecoration(
-          hintText: 'Search users...',
-          prefixIcon:
-              const Icon(Icons.search),
+          hintText: 'Search by ID, name, email, phone, or role...',
+          prefixIcon: const Icon(Icons.search),
           suffixIcon: _searchQuery.isEmpty
               ? null
               : IconButton(
@@ -732,12 +724,10 @@ class _AdminManagementScreenState
                       _searchQuery = '';
                     });
                   },
-                  icon:
-                      const Icon(Icons.clear),
+                  icon: const Icon(Icons.clear),
                 ),
           border: OutlineInputBorder(
-            borderRadius:
-                BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(14),
           ),
         ),
       ),
@@ -753,8 +743,7 @@ class _AdminManagementScreenState
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               Icons.people_outline,
@@ -816,14 +805,13 @@ class _AdminManagementScreenState
         _canDeleteUser(user);
 
     return Card(
-      margin:
-          const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
-        padding:
-            const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(14),
         child: Column(
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildAvatar(user),
                 const SizedBox(width: 12),
@@ -839,8 +827,7 @@ class _AdminManagementScreenState
                               user.name,
                               overflow:
                                   TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(
+                              style: const TextStyle(
                                 fontWeight:
                                     FontWeight.bold,
                                 fontSize: 16,
@@ -856,7 +843,24 @@ class _AdminManagementScreenState
                           ],
                         ],
                       ),
+
+                      // ------------------------------------------------
+                      // USER ID
+                      // ------------------------------------------------
+
                       const SizedBox(height: 4),
+                      Text(
+                        'ID: ${user.id}',
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+
+                      const SizedBox(height: 3),
                       Text(
                         user.email,
                         overflow:
@@ -889,8 +893,7 @@ class _AdminManagementScreenState
               isProtected: isProtected,
               canPromote: canPromote,
               canEdit: canEdit,
-              canRemoveAdmin:
-                  canRemoveAdmin,
+              canRemoveAdmin: canRemoveAdmin,
               canDelete: canDelete,
             ),
           ],
@@ -986,14 +989,12 @@ class _AdminManagementScreenState
     Color color,
   ) {
     return Container(
-      padding:
-          const EdgeInsets.symmetric(
+      padding: const EdgeInsets.symmetric(
         horizontal: 8,
         vertical: 4,
       ),
       decoration: BoxDecoration(
-        color:
-            color.withValues(alpha: 0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius:
             BorderRadius.circular(20),
       ),
@@ -1101,8 +1102,7 @@ class _AdminManagementScreenState
         actions.add(
           Expanded(
             child: OutlinedButton.icon(
-              style:
-                  OutlinedButton.styleFrom(
+              style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.red,
               ),
               onPressed: () {
@@ -1158,8 +1158,7 @@ class _AdminManagementScreenState
 
         actions.add(
           OutlinedButton.icon(
-            style:
-                OutlinedButton.styleFrom(
+            style: OutlinedButton.styleFrom(
               foregroundColor: Colors.red,
             ),
             onPressed: () {
@@ -1168,8 +1167,9 @@ class _AdminManagementScreenState
             icon: const Icon(
               Icons.remove_circle_outline,
             ),
-            label:
-                const Text('Remove Admin'),
+            label: const Text(
+              'Remove Admin',
+            ),
           ),
         );
       }
@@ -1183,8 +1183,7 @@ class _AdminManagementScreenState
 
         actions.add(
           OutlinedButton.icon(
-            style:
-                OutlinedButton.styleFrom(
+            style: OutlinedButton.styleFrom(
               foregroundColor: Colors.red,
             ),
             onPressed: () {
@@ -1200,8 +1199,7 @@ class _AdminManagementScreenState
 
       if (actions.isNotEmpty) {
         return SingleChildScrollView(
-          scrollDirection:
-              Axis.horizontal,
+          scrollDirection: Axis.horizontal,
           child: Row(
             children: actions,
           ),
@@ -1211,6 +1209,10 @@ class _AdminManagementScreenState
 
     return _noActionMessage();
   }
+
+  // ============================================================
+  // NO ACTION MESSAGE
+  // ============================================================
 
   Widget _noActionMessage() {
     return Row(
@@ -1314,8 +1316,7 @@ class _EditAdminScreenState
       phone: _phoneController.text.trim(),
     );
 
-    Navigator.of(context)
-        .pop(updatedUser);
+    Navigator.of(context).pop(updatedUser);
   }
 
   // ============================================================
@@ -1391,8 +1392,7 @@ class _EditAdminScreenState
         child: Form(
           key: _formKey,
           child: ListView(
-            padding:
-                const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(20),
             children: [
               const Icon(
                 Icons.admin_panel_settings,
@@ -1401,34 +1401,50 @@ class _EditAdminScreenState
               const SizedBox(height: 16),
               Text(
                 'Edit Normal Admin',
-                textAlign:
-                    TextAlign.center,
+                textAlign: TextAlign.center,
                 style: Theme.of(context)
                     .textTheme
                     .headlineSmall
                     ?.copyWith(
-                      fontWeight:
-                          FontWeight.bold,
+                      fontWeight: FontWeight.bold,
                     ),
               ),
               const SizedBox(height: 8),
               const Text(
                 'Update the administrator account information.',
-                textAlign:
-                    TextAlign.center,
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
+
+              // ------------------------------------------------
+              // USER ID - READ ONLY
+              // ------------------------------------------------
+
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'User ID',
+                  prefixIcon: Icon(
+                    Icons.badge_outlined,
+                  ),
+                ),
+                child: Text(
+                  widget.user.id,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
               TextFormField(
-                controller:
-                    _nameController,
+                controller: _nameController,
                 textInputAction:
                     TextInputAction.next,
-                validator:
-                    _validateName,
+                validator: _validateName,
                 decoration:
                     const InputDecoration(
-                  labelText:
-                      'Full Name',
+                  labelText: 'Full Name',
                   prefixIcon: Icon(
                     Icons.person_outline,
                   ),
@@ -1436,15 +1452,12 @@ class _EditAdminScreenState
               ),
               const SizedBox(height: 16),
               TextFormField(
-                controller:
-                    _emailController,
+                controller: _emailController,
                 keyboardType:
-                    TextInputType
-                        .emailAddress,
+                    TextInputType.emailAddress,
                 textInputAction:
                     TextInputAction.next,
-                validator:
-                    _validateEmail,
+                validator: _validateEmail,
                 decoration:
                     const InputDecoration(
                   labelText: 'Email',
@@ -1455,14 +1468,12 @@ class _EditAdminScreenState
               ),
               const SizedBox(height: 16),
               TextFormField(
-                controller:
-                    _phoneController,
+                controller: _phoneController,
                 keyboardType:
                     TextInputType.phone,
                 textInputAction:
                     TextInputAction.done,
-                validator:
-                    _validatePhone,
+                validator: _validatePhone,
                 decoration:
                     const InputDecoration(
                   labelText: 'Phone',
@@ -1479,8 +1490,7 @@ class _EditAdminScreenState
                   child: const Text(
                     'Save Changes',
                     style: TextStyle(
-                      fontWeight:
-                          FontWeight.bold,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),

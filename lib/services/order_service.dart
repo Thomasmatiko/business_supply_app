@@ -2,6 +2,9 @@ import '../database/database_helper.dart';
 import '../models/order.dart';
 import '../models/user.dart';
 import '../models/cart_item.dart';
+import 'notification_service.dart';
+import 'activity_log_service.dart';
+import 'auth_service.dart';
 
 class OrderService {
   static final OrderService instance = OrderService._init();
@@ -9,7 +12,33 @@ class OrderService {
   final DatabaseHelper _databaseHelper =
       DatabaseHelper.instance;
 
+      final ActivityLogService _activityLogService =
+    ActivityLogService.instance;
+
   OrderService._init();
+
+    Future<void> _logOrderAction({
+    required String action,
+    required String description,
+    String type = 'order',
+    String? entityId,
+  }) async {
+    try {
+      final user = AuthService.instance.currentUser;
+
+      await _activityLogService.logAction(
+        userId: user?.id,
+        userName: user?.name,
+        action: action,
+        description: description,
+        type: type,
+        entityType: 'order',
+        entityId: entityId,
+      );
+    } catch (_) {
+      // Audit logging must never break order operations.
+    }
+  }
 
   // ============================================================
   // VALID ORDER STATUSES
@@ -23,6 +52,131 @@ class OrderService {
     'delivered',
     'cancelled',
   };
+
+  // ============================================================
+  // NOTIFICATION HELPERS
+  // ============================================================
+
+  Future<void> _notifyOrderCreated(
+    Order order,
+  ) async {
+    try {
+      // --------------------------------------------------------
+      // BUYER
+      // --------------------------------------------------------
+
+      await NotificationService.instance.notifyOrderPlaced(
+        userId: order.buyerId,
+        orderId: order.id,
+      );
+    } catch (_) {
+      // Notification failure must never break ordering.
+    }
+
+    try {
+      // --------------------------------------------------------
+      // SELLER
+      // --------------------------------------------------------
+
+      await NotificationService.instance.notifySellerNewOrder(
+        sellerId: order.sellerId,
+        orderId: order.id,
+      );
+    } catch (_) {
+      // Notification failure must never break ordering.
+    }
+  }
+
+  Future<void> _notifyOrderStatusChanged(
+    Order order,
+    String newStatus,
+  ) async {
+    final normalizedStatus =
+        newStatus.trim().toLowerCase();
+
+    // ----------------------------------------------------------
+    // BUYER STATUS NOTIFICATIONS
+    // ----------------------------------------------------------
+
+    try {
+      switch (normalizedStatus) {
+        case 'confirmed':
+          await NotificationService.instance
+              .notifyOrderConfirmed(
+            userId: order.buyerId,
+            orderId: order.id,
+          );
+          break;
+
+        case 'processing':
+          await NotificationService.instance
+              .notifyOrderProcessing(
+            userId: order.buyerId,
+            orderId: order.id,
+          );
+          break;
+
+        case 'shipped':
+          await NotificationService.instance
+              .notifyOrderShipped(
+            userId: order.buyerId,
+            orderId: order.id,
+          );
+          break;
+
+        case 'delivered':
+          await NotificationService.instance
+              .notifyOrderDelivered(
+            userId: order.buyerId,
+            orderId: order.id,
+          );
+          break;
+
+        case 'cancelled':
+          await NotificationService.instance
+              .notifyOrderCancelled(
+            userId: order.buyerId,
+            orderId: order.id,
+          );
+          break;
+      }
+    } catch (_) {
+      // Notification failure must never break order status update.
+    }
+
+    // ----------------------------------------------------------
+    // SELLER INFORMATION
+    //
+    // Seller should also know when a buyer cancels or confirms
+    // delivery of an order.
+    // ----------------------------------------------------------
+
+    if (normalizedStatus == 'cancelled') {
+      try {
+        await NotificationService.instance.notifyAccount(
+          userId: order.sellerId,
+          title: 'Order Cancelled',
+          message:
+              'Order #${order.id} has been cancelled by the buyer.',
+        );
+      } catch (_) {
+        // Notification failure must not break the operation.
+      }
+    }
+
+    if (normalizedStatus == 'delivered') {
+      try {
+        await NotificationService.instance.notifyAccount(
+          userId: order.sellerId,
+          title: 'Order Delivered',
+          message:
+              'Order #${order.id} has been marked as delivered.',
+        );
+      } catch (_) {
+        // Notification failure must not break the operation.
+      }
+    }
+  }
 
   // ============================================================
   // GET ALL ORDERS
@@ -151,7 +305,7 @@ class OrderService {
   //
   // Stock is checked and reduced inside one transaction.
   //
-  // If anything fails, the complete transaction is rolled back.
+  // Notifications are sent ONLY AFTER the transaction succeeds.
   // ============================================================
 
   Future<List<Order>> createOrderFromCart({
@@ -171,9 +325,10 @@ class OrderService {
 
     final db = await _databaseHelper.database;
 
-    return await db.transaction<List<Order>>(
+    final createdOrders =
+        await db.transaction<List<Order>>(
       (txn) async {
-        final createdOrders = <Order>[];
+        final orders = <Order>[];
 
         // ------------------------------------------------------
         // PROCESS EACH CART ITEM
@@ -235,7 +390,7 @@ class OrderService {
           }
 
           // ----------------------------------------------------
-          // GET SELLER FROM PRODUCT
+          // GET SELLER
           // ----------------------------------------------------
 
           final sellerId =
@@ -267,7 +422,7 @@ class OrderService {
           // ----------------------------------------------------
 
           final orderId =
-              'ORD_${DateTime.now().microsecondsSinceEpoch}_${createdOrders.length}';
+              'ORD_${DateTime.now().microsecondsSinceEpoch}_${orders.length}';
 
           // ----------------------------------------------------
           // CREATE ORDER
@@ -284,9 +439,6 @@ class OrderService {
                 sellingPrice * cartItem.quantity,
             status: 'pending',
             createdBy: normalizedBuyerId,
-
-            // IMPORTANT:
-            // Order model requires createdAt.
             createdAt: DateTime.now(),
           );
 
@@ -332,7 +484,7 @@ class OrderService {
             );
           }
 
-          createdOrders.add(order);
+          orders.add(order);
         }
 
         // ------------------------------------------------------
@@ -351,9 +503,27 @@ class OrderService {
           );
         }
 
-        return createdOrders;
+        return orders;
       },
     );
+
+    // ==========================================================
+    // SEND NOTIFICATIONS AFTER SUCCESSFUL TRANSACTION
+    // ==========================================================
+    for (final order in createdOrders) {
+      await _logOrderAction(
+        action: 'order_created',
+        description:
+            'Created order "${order.id}" for '
+            '${order.quantity} item(s) totaling '
+            '${order.totalAmount}.',
+        entityId: order.id,
+      );
+
+      await _notifyOrderCreated(order);
+    }
+
+    return createdOrders;
   }
 
   // ============================================================
@@ -542,6 +712,10 @@ class OrderService {
 
   // ============================================================
   // ADD ORDER
+  //
+  // Direct-order support remains available for existing code.
+  //
+  // Notification is sent only after the transaction succeeds.
   // ============================================================
 
   Future<int> addOrder(
@@ -549,7 +723,8 @@ class OrderService {
   ) async {
     final db = await _databaseHelper.database;
 
-    return await db.transaction<int>(
+    final insertedRows =
+        await db.transaction<int>(
       (txn) async {
         // ------------------------------------------------------
         // VALIDATE QUANTITY
@@ -673,6 +848,32 @@ class OrderService {
         );
       },
     );
+
+    // ----------------------------------------------------------
+    // NOTIFY AFTER SUCCESSFUL TRANSACTION
+    // ----------------------------------------------------------
+
+        if (insertedRows > 0) {
+      final createdOrder =
+          await getOrderById(order.id);
+
+      if (createdOrder != null) {
+        await _logOrderAction(
+          action: 'order_created',
+          description:
+              'Created order "${createdOrder.id}" for '
+              '${createdOrder.quantity} item(s) totaling '
+              '${createdOrder.totalAmount}.',
+          entityId: createdOrder.id,
+        );
+
+        await _notifyOrderCreated(
+          createdOrder,
+        );
+      }
+    }
+
+    return insertedRows;
   }
 
   // ============================================================
@@ -712,12 +913,23 @@ class OrderService {
       createdAt: existingOrder.createdAt,
     );
 
-    return await db.update(
+        final result = await db.update(
       'orders',
       safeOrder.toMap(),
       where: 'id = ?',
       whereArgs: [updatedOrder.id],
     );
+
+    if (result > 0) {
+      await _logOrderAction(
+        action: 'order_updated',
+        description:
+            'Updated order "${updatedOrder.id}".',
+        entityId: updatedOrder.id,
+      );
+    }
+
+    return result;
   }
 
   // ============================================================
@@ -734,6 +946,8 @@ class OrderService {
   //
   // ADMIN:
   // Not allowed through this method.
+  //
+  // Notifications are sent only after the transaction succeeds.
   // ============================================================
 
   Future<int> updateOrderStatus(
@@ -761,7 +975,8 @@ class OrderService {
 
     final db = await _databaseHelper.database;
 
-    return await db.transaction<int>(
+    final updatedRows =
+        await db.transaction<int>(
       (txn) async {
         // ------------------------------------------------------
         // GET ORDER
@@ -915,6 +1130,36 @@ class OrderService {
         );
       },
     );
+
+    // ----------------------------------------------------------
+    // SEND STATUS NOTIFICATION AFTER SUCCESS
+    // ----------------------------------------------------------
+
+           if (updatedRows > 0) {
+      final updatedOrder =
+          await getOrderById(
+        normalizedOrderId,
+      );
+
+      if (updatedOrder != null) {
+        await _logOrderAction(
+          action: normalizedStatus == 'cancelled'
+              ? 'order_cancelled'
+              : 'order_status_changed',
+          description:
+              'Order "${updatedOrder.id}" status changed '
+              'to "$normalizedStatus".',
+          entityId: updatedOrder.id,
+        );
+
+        await _notifyOrderStatusChanged(
+          updatedOrder,
+          normalizedStatus,
+        );
+      }
+    }
+
+    return updatedRows;
   }
 
   // ============================================================

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/user.dart';
 import '../../services/user_service.dart';
+import '../../services/activity_log_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -20,6 +21,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _confirmPasswordController = TextEditingController();
 
   final UserService _userService = UserService.instance;
+  final ActivityLogService _activityLogService =
+    ActivityLogService.instance;
 
   bool _isRegistering = false;
   bool _obscurePassword = true;
@@ -58,9 +61,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final emailExists = await _userService.emailExists(email);
 
       if (emailExists) {
-        if (!mounted) return;
+  await _activityLogService.logActivity(
+    action: 'registration_failed',
+    description:
+        'Registration attempt using an email address that already exists.',
+    type: 'authentication',
+  );
 
-        ScaffoldMessenger.of(context).showSnackBar(
+  if (!mounted) return;
+
+  ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
               'An account with this email already exists.',
@@ -88,9 +98,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       await _userService.addUser(user);
 
-      if (!mounted) return;
+await _activityLogService.logAction(
+  userId: user.id,
+  userName: user.name,
+  action: 'registration',
+  description:
+      '${user.name} created a ${user.role} account.',
+  type: 'authentication',
+  entityType: 'user',
+  entityId: user.id,
+);
 
-      ScaffoldMessenger.of(context).showSnackBar(
+if (!mounted) return;
+
+ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             _selectedRole == 'buyer'
@@ -101,10 +122,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
 
       Navigator.pop(context);
-    } catch (e) {
-      if (!mounted) return;
+    }  catch (e) {
+  await _activityLogService.logActivity(
+    action: 'registration_failed',
+    description:
+        'An unexpected error occurred during account registration.',
+    type: 'authentication',
+  );
 
-      ScaffoldMessenger.of(context).showSnackBar(
+  if (!mounted) return;
+
+  ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             'Registration failed: $e',

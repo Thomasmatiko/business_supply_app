@@ -1,5 +1,6 @@
 import '../models/user.dart';
 import 'user_service.dart';
+import 'activity_log_service.dart';
 
 class AuthService {
   static final AuthService instance =
@@ -9,6 +10,9 @@ class AuthService {
 
   final UserService _userService =
       UserService.instance;
+
+  final ActivityLogService _activityLogService =
+      ActivityLogService.instance;
 
   AppUser? _currentUser;
 
@@ -27,6 +31,18 @@ class AuthService {
 
   void setCurrentUser(AppUser user) {
     _currentUser = user;
+
+    // Record successful authentication/session creation.
+    _activityLogService.logAction(
+      userId: user.id,
+      userName: user.name,
+      action: 'login',
+      description:
+          '${user.name} logged into the application.',
+      type: 'authentication',
+      entityType: 'user',
+      entityId: user.id,
+    );
   }
 
   void clearCurrentUser() {
@@ -34,6 +50,21 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    final user = _currentUser;
+
+    if (user != null) {
+      await _activityLogService.logAction(
+        userId: user.id,
+        userName: user.name,
+        action: 'logout',
+        description:
+            '${user.name} logged out of the application.',
+        type: 'authentication',
+        entityType: 'user',
+        entityId: user.id,
+      );
+    }
+
     clearCurrentUser();
   }
 

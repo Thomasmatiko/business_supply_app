@@ -1,3 +1,4 @@
+
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
@@ -60,7 +61,7 @@ class DatabaseHelper {
 
     return openDatabase(
       path,
-      version: 17,
+      version: 20,
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
       onOpen: (db) async {
@@ -114,7 +115,7 @@ class DatabaseHelper {
         password TEXT NOT NULL,
         role TEXT NOT NULL,
         admin_level TEXT NOT NULL DEFAULT 'none',
-        profile_image_path TEXT
+        profile_image TEXT
       )
     ''');
 
@@ -175,6 +176,67 @@ class DatabaseHelper {
       )
     ''');
 
+
+    // ==========================================================
+    // NOTIFICATIONS
+    // ==========================================================
+
+    await db.execute('''
+      CREATE TABLE notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'general',
+        is_read INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ==========================================================
+    // USER SETTINGS
+    // ==========================================================
+
+    await db.execute('''
+      CREATE TABLE user_settings (
+        user_id TEXT PRIMARY KEY,
+        notifications_enabled INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+
+
+        // ==========================================================
+    // ACTIVITY LOGS
+    // ==========================================================
+
+    await db.execute('''
+      CREATE TABLE activity_logs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        user_name TEXT,
+        action TEXT NOT NULL,
+        description TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'general',
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ==========================================================
+    // AUDIT LOGS
+    // ==========================================================
+
+    await db.execute('''
+      CREATE TABLE audit_logs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        user_name TEXT,
+        action TEXT NOT NULL,
+        entity_type TEXT,
+        entity_id TEXT,
+        description TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
     // ==========================================================
     // INITIAL PRODUCTS
     // ==========================================================
@@ -532,18 +594,25 @@ class DatabaseHelper {
     // ==========================================================
 
     if (oldVersion < 14) {
-      await db.execute('''
-        CREATE TABLE cart_items (
-          id TEXT PRIMARY KEY,
-          buyer_id TEXT NOT NULL,
-          product_id TEXT NOT NULL,
-          seller_id TEXT NOT NULL,
-          product_name TEXT NOT NULL,
-          unit_price REAL NOT NULL,
-          quantity INTEGER NOT NULL,
-          image_path TEXT
-        )
-      ''');
+      final cartExists = await _tableExists(
+        db,
+        'cart_items',
+      );
+
+      if (!cartExists) {
+        await db.execute('''
+          CREATE TABLE cart_items (
+            id TEXT PRIMARY KEY,
+            buyer_id TEXT NOT NULL,
+            product_id TEXT NOT NULL,
+            seller_id TEXT NOT NULL,
+            product_name TEXT NOT NULL,
+            unit_price REAL NOT NULL,
+            quantity INTEGER NOT NULL,
+            image_path TEXT
+          )
+        ''');
+      }
 
       debugPrint(
         'Version 14 migration completed.',
@@ -592,14 +661,93 @@ class DatabaseHelper {
 
     // ==========================================================
     // VERSION 17
-    // USER PROFILE IMAGE
+    // USER PROFILE IMAGE PATH
     // ==========================================================
 
     if (oldVersion < 17) {
-      await _ensureUserProfileImageColumn(db);
+      await _ensureUserProfileImagePathColumn(db);
 
       debugPrint(
-        'Version 17 user profile image migration completed.',
+        'Version 17 profile image path migration completed.',
+      );
+    }
+
+    // ==========================================================
+    // VERSION 18
+    // STANDARDIZE PROFILE IMAGE COLUMN
+    // ==========================================================
+
+    if (oldVersion < 18) {
+      await _migrateProfileImageToStandardColumn(db);
+
+      debugPrint(
+        'Version 18 profile image migration completed.',
+      );
+    }
+
+        // ==========================================================
+    // VERSION 19
+    // NOTIFICATION SYSTEM
+    // ==========================================================
+
+    if (oldVersion < 19) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS notifications (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          message TEXT NOT NULL,
+          type TEXT NOT NULL DEFAULT 'general',
+          is_read INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS user_settings (
+          user_id TEXT PRIMARY KEY,
+          notifications_enabled INTEGER NOT NULL DEFAULT 1
+        )
+      ''');
+
+      debugPrint(
+        'Version 19 notification migration completed.',
+      );
+    }
+
+        // ==========================================================
+    // VERSION 20
+    // ACTIVITY & AUDIT LOG SYSTEM
+    // ==========================================================
+
+    if (oldVersion < 20) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS activity_logs (
+          id TEXT PRIMARY KEY,
+          user_id TEXT,
+          user_name TEXT,
+          action TEXT NOT NULL,
+          description TEXT NOT NULL,
+          type TEXT NOT NULL DEFAULT 'general',
+          created_at TEXT NOT NULL
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS audit_logs (
+          id TEXT PRIMARY KEY,
+          user_id TEXT,
+          user_name TEXT,
+          action TEXT NOT NULL,
+          entity_type TEXT,
+          entity_id TEXT,
+          description TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        )
+      ''');
+
+      debugPrint(
+        'Version 20 activity and audit log migration completed.',
       );
     }
   }
@@ -842,6 +990,10 @@ class DatabaseHelper {
     Database db,
   ) async {
     try {
+      if (!await _tableExists(db, 'products')) {
+        return;
+      }
+
       final columns = await db.rawQuery(
         'PRAGMA table_info(products)',
       );
@@ -877,7 +1029,118 @@ class DatabaseHelper {
   }
 
   // ============================================================
-  // ENSURE USER PROFILE IMAGE COLUMN
+  // VERSION 17
+  // ENSURE OLD PROFILE IMAGE PATH COLUMN
+  // ============================================================
+
+  Future<void> _ensureUserProfileImagePathColumn(
+    Database db,
+  ) async {
+    try {
+      if (!await _tableExists(db, 'users')) {
+        return;
+      }
+
+      final columns = await db.rawQuery(
+        'PRAGMA table_info(users)',
+      );
+
+      final names = columns
+          .map(
+            (column) => column['name']?.toString(),
+          )
+          .whereType<String>()
+          .toSet();
+
+      if (!names.contains('profile_image_path')) {
+        await db.execute('''
+          ALTER TABLE users
+          ADD COLUMN profile_image_path TEXT
+        ''');
+
+        debugPrint(
+          'profile_image_path column added successfully.',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'Error ensuring profile_image_path column: $e',
+      );
+
+      rethrow;
+    }
+  }
+
+  // ============================================================
+  // VERSION 18
+  // STANDARDIZE TO profile_image
+  // ============================================================
+
+  Future<void> _migrateProfileImageToStandardColumn(
+    Database db,
+  ) async {
+    try {
+      if (!await _tableExists(db, 'users')) {
+        return;
+      }
+
+      final columns = await db.rawQuery(
+        'PRAGMA table_info(users)',
+      );
+
+      final names = columns
+          .map(
+            (column) => column['name']?.toString(),
+          )
+          .whereType<String>()
+          .toSet();
+
+      // ----------------------------------------------------------
+      // Add the correct column if it does not exist.
+      // ----------------------------------------------------------
+
+      if (!names.contains('profile_image')) {
+        await db.execute('''
+          ALTER TABLE users
+          ADD COLUMN profile_image TEXT
+        ''');
+
+        debugPrint(
+          'profile_image column added successfully.',
+        );
+      }
+
+      // ----------------------------------------------------------
+      // Copy old profile_image_path values if that column exists.
+      // ----------------------------------------------------------
+
+      if (names.contains('profile_image_path')) {
+        await db.execute('''
+          UPDATE users
+          SET profile_image = profile_image_path
+          WHERE (
+            profile_image IS NULL
+            OR TRIM(profile_image) = ''
+          )
+          AND profile_image_path IS NOT NULL
+          AND TRIM(profile_image_path) != ''
+        ''');
+
+        debugPrint(
+          'Existing profile images migrated successfully.',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'Error migrating profile image: $e',
+      );
+
+      rethrow;
+    }
+  }
+
+  // ============================================================
+  // ENSURE CURRENT PROFILE IMAGE COLUMN
   // ============================================================
 
   Future<void> _ensureUserProfileImageColumn(
@@ -892,30 +1155,41 @@ class DatabaseHelper {
         'PRAGMA table_info(users)',
       );
 
-      bool profileImageExists = false;
+      final names = columns
+          .map(
+            (column) => column['name']?.toString(),
+          )
+          .whereType<String>()
+          .toSet();
 
-      for (final column in columns) {
-        final name = column['name']?.toString();
-
-        if (name == 'profile_image_path') {
-          profileImageExists = true;
-          break;
-        }
-      }
-
-      if (!profileImageExists) {
+      if (!names.contains('profile_image')) {
         await db.execute('''
           ALTER TABLE users
-          ADD COLUMN profile_image_path TEXT
+          ADD COLUMN profile_image TEXT
         ''');
 
         debugPrint(
-          'profile_image_path column added successfully.',
+          'profile_image column added successfully.',
         );
+      }
+
+      // If an older installation has profile_image_path,
+      // preserve the existing image path.
+      if (names.contains('profile_image_path')) {
+        await db.execute('''
+          UPDATE users
+          SET profile_image = profile_image_path
+          WHERE (
+            profile_image IS NULL
+            OR TRIM(profile_image) = ''
+          )
+          AND profile_image_path IS NOT NULL
+          AND TRIM(profile_image_path) != ''
+        ''');
       }
     } catch (e) {
       debugPrint(
-        'Error ensuring profile_image_path column: $e',
+        'Error ensuring profile_image column: $e',
       );
 
       rethrow;
@@ -980,7 +1254,7 @@ class DatabaseHelper {
         'password': 'Thomas@2023',
         'role': 'admin',
         'admin_level': 'leader',
-        'profile_image_path': null,
+        'profile_image': null,
       },
     );
   }
@@ -1186,4 +1460,86 @@ class DatabaseHelper {
       arguments,
     );
   }
+
+    // ============================================================
+  // ACTIVITY LOG
+  // ============================================================
+
+  Future<int> insertActivityLog({
+    String? userId,
+    String? userName,
+    required String action,
+    required String description,
+    String type = 'general',
+  }) async {
+    final db = await database;
+
+    return db.insert(
+      'activity_logs',
+      {
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'user_id': userId,
+        'user_name': userName,
+        'action': action,
+        'description': description,
+        'type': type,
+        'created_at': DateTime.now().toIso8601String(),
+      },
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getActivityLogs({
+    int? limit,
+  }) async {
+    final db = await database;
+
+    return db.query(
+      'activity_logs',
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
+  }
+
+
+    // ============================================================
+  // AUDIT LOG
+  // ============================================================
+
+  Future<int> insertAuditLog({
+    String? userId,
+    String? userName,
+    required String action,
+    String? entityType,
+    String? entityId,
+    required String description,
+  }) async {
+    final db = await database;
+
+    return db.insert(
+      'audit_logs',
+      {
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'user_id': userId,
+        'user_name': userName,
+        'action': action,
+        'entity_type': entityType,
+        'entity_id': entityId,
+        'description': description,
+        'created_at': DateTime.now().toIso8601String(),
+      },
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getAuditLogs({
+    int? limit,
+  }) async {
+    final db = await database;
+
+    return db.query(
+      'audit_logs',
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
+  }
 }
+

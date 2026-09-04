@@ -1,9 +1,10 @@
-
 import 'package:flutter/material.dart';
 
+import '../../services/activity_log_service.dart';
 import '../../services/admin_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/payment_service.dart';
+import '../../widgets/notification_bell.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -24,12 +25,20 @@ class _AdminDashboardScreenState
   final PaymentService _paymentService =
       PaymentService.instance;
 
+  final ActivityLogService _activityLogService =
+      ActivityLogService.instance;
+
   AdminDashboardStats? _stats;
 
   List<Map<String, dynamic>> _payments = [];
 
+  List<Map<String, dynamic>> _activityLogs = [];
+
+  List<Map<String, dynamic>> _auditLogs = [];
+
   bool _isLoading = true;
   bool _isPaymentsLoading = false;
+  bool _isLogsLoading = false;
 
   String? _errorMessage;
 
@@ -73,6 +82,8 @@ class _AdminDashboardScreenState
           await _adminService.getDashboardStats();
 
       await _loadPayments();
+
+      await _loadLogs();
 
       if (!mounted) return;
 
@@ -138,6 +149,49 @@ class _AdminDashboardScreenState
   }
 
   // ============================================================
+  // LOAD ACTIVITY + AUDIT LOGS
+  // ============================================================
+
+  Future<void> _loadLogs() async {
+    if (mounted) {
+      setState(() {
+        _isLogsLoading = true;
+      });
+    }
+
+    try {
+      final activityLogs =
+          await _activityLogService.getActivityLogs(
+        limit: 10,
+      );
+
+      final auditLogs =
+          await _activityLogService.getAuditLogs(
+        limit: 10,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _activityLogs = activityLogs;
+        _auditLogs = auditLogs;
+        _isLogsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLogsLoading = false;
+      });
+
+      _showMessage(
+        'Failed to load activity logs: $e',
+        isError: true,
+      );
+    }
+  }
+
+  // ============================================================
   // CHANGE PAYMENT FILTER
   // ============================================================
 
@@ -172,6 +226,8 @@ class _AdminDashboardScreenState
       );
 
       await _loadPayments();
+
+      await _loadLogs();
 
       if (!mounted) return;
 
@@ -288,6 +344,7 @@ class _AdminDashboardScreenState
           ),
         ),
         actions: [
+          const NotificationBell(),
           IconButton(
             tooltip: 'Refresh',
             onPressed:
@@ -461,6 +518,18 @@ class _AdminDashboardScreenState
 
           const SizedBox(height: 28),
 
+          _buildRecentActivity(
+            context,
+          ),
+
+          const SizedBox(height: 28),
+
+          _buildAuditLogs(
+            context,
+          ),
+
+          const SizedBox(height: 28),
+
           _buildQuickOverview(
             context,
             stats,
@@ -617,10 +686,8 @@ class _AdminDashboardScreenState
                 first,
               ),
             ),
-
             if (second != null) ...[
               const SizedBox(width: 12),
-
               Expanded(
                 child: _buildStatCard(
                   context,
@@ -1294,10 +1361,6 @@ class _AdminDashboardScreenState
         crossAxisAlignment:
             CrossAxisAlignment.start,
         children: [
-          // ------------------------------------------------------
-          // TOP
-          // ------------------------------------------------------
-
           Row(
             crossAxisAlignment:
                 CrossAxisAlignment.start,
@@ -1400,10 +1463,6 @@ class _AdminDashboardScreenState
 
           const SizedBox(height: 16),
 
-          // ------------------------------------------------------
-          // AMOUNT
-          // ------------------------------------------------------
-
           Container(
             width: double.infinity,
             padding:
@@ -1447,10 +1506,6 @@ class _AdminDashboardScreenState
           ),
 
           const SizedBox(height: 14),
-
-          // ------------------------------------------------------
-          // PAYMENT DETAILS
-          // ------------------------------------------------------
 
           _buildPaymentInfoRow(
             context,
@@ -1505,10 +1560,6 @@ class _AdminDashboardScreenState
               ),
             ),
           ],
-
-          // ------------------------------------------------------
-          // ACTIONS
-          // ------------------------------------------------------
 
           if (status ==
               PaymentService.pending) ...[
@@ -1632,6 +1683,795 @@ class _AdminDashboardScreenState
         ),
       ],
     );
+  }
+
+  // ============================================================
+  // RECENT ACTIVITY
+  // ============================================================
+
+  Widget _buildRecentActivity(
+    BuildContext context,
+  ) {
+    return Card(
+      child: Padding(
+        padding:
+            const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration:
+                      BoxDecoration(
+                    borderRadius:
+                        BorderRadius.circular(
+                      14,
+                    ),
+                    color:
+                        Theme.of(context)
+                            .colorScheme
+                            .primaryContainer,
+                  ),
+                  child: Icon(
+                    Icons.history,
+                    color:
+                        Theme.of(context)
+                            .colorScheme
+                            .primary,
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Recent Activity',
+                        style:
+                            Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  fontWeight:
+                                      FontWeight.bold,
+                                ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Latest actions performed in the system.',
+                        style:
+                            Theme.of(context)
+                                .textTheme
+                                .bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+
+                IconButton(
+                  tooltip: 'Refresh activity',
+                  onPressed:
+                      _isLogsLoading
+                          ? null
+                          : _loadLogs,
+                  icon:
+                      const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            if (_isLogsLoading)
+              const Padding(
+                padding:
+                    EdgeInsets.symmetric(
+                  vertical: 30,
+                ),
+                child: Center(
+                  child:
+                      CircularProgressIndicator(),
+                ),
+              )
+            else if (_activityLogs.isEmpty)
+              _buildEmptyActivityLogs(
+                context,
+              )
+            else
+              ..._activityLogs.map(
+                (log) =>
+                    _buildActivityLogCard(
+                  context,
+                  log,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // ACTIVITY LOG CARD
+  // ============================================================
+
+  Widget _buildActivityLogCard(
+    BuildContext context,
+    Map<String, dynamic> log,
+  ) {
+    final userName =
+        log['user_name']
+                ?.toString()
+                .trim()
+                .isNotEmpty ==
+            true
+        ? log['user_name'].toString()
+        : 'System';
+
+    final action =
+        log['action']
+                ?.toString() ??
+            'Unknown action';
+
+    final description =
+        log['description']
+                ?.toString() ??
+            '';
+
+    final type =
+        log['type']
+                ?.toString() ??
+            'general';
+
+    final createdAt =
+        log['created_at']
+            ?.toString();
+
+    return Container(
+      margin:
+          const EdgeInsets.only(
+        bottom: 10,
+      ),
+      padding:
+          const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius:
+            BorderRadius.circular(14),
+        color:
+            Theme.of(context)
+                .colorScheme
+                .surfaceContainerHighest,
+      ),
+      child: Row(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 21,
+            backgroundColor:
+                Theme.of(context)
+                    .colorScheme
+                    .primaryContainer,
+            child: Icon(
+              _activityIcon(type),
+              size: 21,
+              color:
+                  Theme.of(context)
+                      .colorScheme
+                      .primary,
+            ),
+          ),
+
+          const SizedBox(width: 12),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _displayAction(action),
+                        style:
+                            Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(
+                                  fontWeight:
+                                      FontWeight.bold,
+                                ),
+                      ),
+                    ),
+
+                    if (createdAt != null &&
+                        createdAt.isNotEmpty)
+                      const SizedBox(width: 8),
+
+                    if (createdAt != null &&
+                        createdAt.isNotEmpty)
+                      Text(
+                        _formatDateTime(
+                          createdAt,
+                        ),
+                        style:
+                            Theme.of(context)
+                                .textTheme
+                                .bodySmall,
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 4),
+
+                Text(
+                  userName,
+                  style:
+                      Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(
+                            fontWeight:
+                                FontWeight.w600,
+                          ),
+                ),
+
+                if (description
+                    .trim()
+                    .isNotEmpty) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    description,
+                    style:
+                        Theme.of(context)
+                            .textTheme
+                            .bodySmall,
+                  ),
+                ],
+
+                const SizedBox(height: 7),
+
+                Container(
+                  padding:
+                      const EdgeInsets
+                          .symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration:
+                      BoxDecoration(
+                    borderRadius:
+                        BorderRadius.circular(
+                      8,
+                    ),
+                    color:
+                        Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(
+                              alpha: 0.08,
+                            ),
+                  ),
+                  child: Text(
+                    type.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight:
+                          FontWeight.bold,
+                      color:
+                          Theme.of(context)
+                              .colorScheme
+                              .primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // EMPTY ACTIVITY LOGS
+  // ============================================================
+
+  Widget _buildEmptyActivityLogs(
+    BuildContext context,
+  ) {
+    return Padding(
+      padding:
+          const EdgeInsets.symmetric(
+        vertical: 25,
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.history,
+            size: 52,
+            color:
+                Theme.of(context)
+                    .colorScheme
+                    .onSurfaceVariant,
+          ),
+
+          const SizedBox(height: 12),
+
+          Text(
+            'No activity recorded yet.',
+            style:
+                Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(
+                      fontWeight:
+                          FontWeight.w600,
+                    ),
+          ),
+
+          const SizedBox(height: 6),
+
+          Text(
+            'System activity will appear here as users perform actions.',
+            textAlign:
+                TextAlign.center,
+            style:
+                Theme.of(context)
+                    .textTheme
+                    .bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // AUDIT LOGS
+  // ============================================================
+
+  Widget _buildAuditLogs(
+    BuildContext context,
+  ) {
+    return Card(
+      child: Padding(
+        padding:
+            const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration:
+                      BoxDecoration(
+                    borderRadius:
+                        BorderRadius.circular(
+                      14,
+                    ),
+                    color:
+                        Theme.of(context)
+                            .colorScheme
+                            .secondaryContainer,
+                  ),
+                  child: Icon(
+                    Icons
+                        .admin_panel_settings_outlined,
+                    color:
+                        Theme.of(context)
+                            .colorScheme
+                            .onSecondaryContainer,
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Audit Log',
+                        style:
+                            Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  fontWeight:
+                                      FontWeight.bold,
+                                ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tracked changes and important system operations.',
+                        style:
+                            Theme.of(context)
+                                .textTheme
+                                .bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+
+                IconButton(
+                  tooltip: 'Refresh audit log',
+                  onPressed:
+                      _isLogsLoading
+                          ? null
+                          : _loadLogs,
+                  icon:
+                      const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            if (_isLogsLoading)
+              const Padding(
+                padding:
+                    EdgeInsets.symmetric(
+                  vertical: 30,
+                ),
+                child: Center(
+                  child:
+                      CircularProgressIndicator(),
+                ),
+              )
+            else if (_auditLogs.isEmpty)
+              _buildEmptyAuditLogs(
+                context,
+              )
+            else
+              ..._auditLogs.map(
+                (log) =>
+                    _buildAuditLogCard(
+                  context,
+                  log,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // AUDIT LOG CARD
+  // ============================================================
+
+  Widget _buildAuditLogCard(
+    BuildContext context,
+    Map<String, dynamic> log,
+  ) {
+    final userName =
+        log['user_name']
+                ?.toString()
+                .trim()
+                .isNotEmpty ==
+            true
+        ? log['user_name'].toString()
+        : 'System';
+
+    final action =
+        log['action']
+                ?.toString() ??
+            'Unknown action';
+
+    final entityType =
+        log['entity_type']
+                ?.toString()
+                .trim();
+
+    final entityId =
+        log['entity_id']
+                ?.toString()
+                .trim();
+
+    final description =
+        log['description']
+                ?.toString() ??
+            '';
+
+    final createdAt =
+        log['created_at']
+            ?.toString();
+
+    return Container(
+      margin:
+          const EdgeInsets.only(
+        bottom: 10,
+      ),
+      padding:
+          const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius:
+            BorderRadius.circular(14),
+        border: Border.all(
+          color:
+              Theme.of(context)
+                  .colorScheme
+                  .outlineVariant,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment:
+                CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons
+                    .verified_user_outlined,
+                size: 22,
+                color:
+                    Theme.of(context)
+                        .colorScheme
+                        .primary,
+              ),
+
+              const SizedBox(width: 10),
+
+              Expanded(
+                child: Text(
+                  _displayAction(action),
+                  style:
+                      Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(
+                            fontWeight:
+                                FontWeight.bold,
+                          ),
+                ),
+              ),
+
+              if (createdAt != null &&
+                  createdAt.isNotEmpty)
+                Text(
+                  _formatDateTime(
+                    createdAt,
+                  ),
+                  style:
+                      Theme.of(context)
+                          .textTheme
+                          .bodySmall,
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+
+          Text(
+            userName,
+            style:
+                Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(
+                      fontWeight:
+                          FontWeight.w600,
+                    ),
+          ),
+
+          if (description
+              .trim()
+              .isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(
+              description,
+              style:
+                  Theme.of(context)
+                      .textTheme
+                      .bodySmall,
+            ),
+          ],
+
+          if ((entityType != null &&
+                  entityType.isNotEmpty) ||
+              (entityId != null &&
+                  entityId.isNotEmpty)) ...[
+            const SizedBox(height: 10),
+
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                if (entityType != null &&
+                    entityType.isNotEmpty)
+                  _buildAuditTag(
+                    context,
+                    'Entity: $entityType',
+                  ),
+                if (entityId != null &&
+                    entityId.isNotEmpty)
+                  _buildAuditTag(
+                    context,
+                    'ID: $entityId',
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // AUDIT TAG
+  // ============================================================
+
+  Widget _buildAuditTag(
+    BuildContext context,
+    String text,
+  ) {
+    return Container(
+      padding:
+          const EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: 4,
+      ),
+      decoration:
+          BoxDecoration(
+        borderRadius:
+            BorderRadius.circular(8),
+        color:
+            Theme.of(context)
+                .colorScheme
+                .secondaryContainer,
+      ),
+      child: Text(
+        text,
+        style:
+            Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(
+                  fontWeight:
+                      FontWeight.w600,
+                ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // EMPTY AUDIT LOGS
+  // ============================================================
+
+  Widget _buildEmptyAuditLogs(
+    BuildContext context,
+  ) {
+    return Padding(
+      padding:
+          const EdgeInsets.symmetric(
+        vertical: 25,
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons
+                .admin_panel_settings_outlined,
+            size: 52,
+            color:
+                Theme.of(context)
+                    .colorScheme
+                    .onSurfaceVariant,
+          ),
+
+          const SizedBox(height: 12),
+
+          Text(
+            'No audit records yet.',
+            style:
+                Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(
+                      fontWeight:
+                          FontWeight.w600,
+                    ),
+          ),
+
+          const SizedBox(height: 6),
+
+          Text(
+            'Important changes will appear here automatically.',
+            textAlign:
+                TextAlign.center,
+            style:
+                Theme.of(context)
+                    .textTheme
+                    .bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // ACTIVITY ICON
+  // ============================================================
+
+  IconData _activityIcon(
+    String type,
+  ) {
+    switch (type.toLowerCase()) {
+      case 'authentication':
+        return Icons.login_outlined;
+
+      case 'admin':
+        return Icons
+            .admin_panel_settings_outlined;
+
+      case 'user':
+        return Icons.person_outline;
+
+      case 'product':
+        return Icons.inventory_2_outlined;
+
+      case 'cart':
+        return Icons.shopping_cart_outlined;
+
+      case 'order':
+        return Icons.receipt_long_outlined;
+
+      case 'payment':
+        return Icons.payments_outlined;
+
+      case 'notification':
+        return Icons.notifications_outlined;
+
+      default:
+        return Icons.history;
+    }
+  }
+
+  // ============================================================
+  // DISPLAY ACTION
+  // ============================================================
+
+  String _displayAction(
+    String action,
+  ) {
+    if (action.trim().isEmpty) {
+      return 'Unknown action';
+    }
+
+    final normalized =
+        action.trim().replaceAll(
+              '_',
+              ' ',
+            );
+
+    return normalized
+        .split(' ')
+        .map(
+          (word) {
+            if (word.isEmpty) {
+              return word;
+            }
+
+            return word[0].toUpperCase() +
+                word.substring(1).toLowerCase();
+          },
+        )
+        .join(' ');
   }
 
   // ============================================================
@@ -2044,4 +2884,3 @@ class _DashboardCardData {
     required this.icon,
   });
 }
-

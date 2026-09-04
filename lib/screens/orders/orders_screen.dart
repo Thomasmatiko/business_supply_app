@@ -6,7 +6,7 @@ import '../../models/product.dart';
 import '../../services/auth_service.dart';
 import '../../services/order_service.dart';
 import '../../services/product_service.dart';
-import 'create_order_screen.dart';
+
 import 'order_details_screen.dart';
 
 class OrdersScreen extends StatefulWidget {
@@ -51,9 +51,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return _authService.isAdmin;
   }
 
-  bool get _canCreateOrders {
-    return _authService.canCreateOrders;
-  }
+  
 
   // ============================================================
   // INIT
@@ -370,23 +368,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   // CREATE ORDER
   // ============================================================
 
-  Future<void> _openCreateOrder() async {
-    if (!_canCreateOrders) {
-      return;
-    }
-
-    final result =
-        await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) =>
-            const CreateOrderScreen(),
-      ),
-    );
-
-    if (result == true) {
-      await _loadData();
-    }
-  }
+  
 
   // ============================================================
   // REFRESH
@@ -444,18 +426,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       // CREATE ORDER BUTTON
       // ========================================================
 
-      floatingActionButton:
-          _canCreateOrders
-              ? FloatingActionButton(
-                  onPressed:
-                      _openCreateOrder,
-                  tooltip:
-                      'Create Order',
-                  child: const Icon(
-                    Icons.add,
-                  ),
-                )
-              : null,
+     floatingActionButton: null,
 
       body: _buildBody(),
     );

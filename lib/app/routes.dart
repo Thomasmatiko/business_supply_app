@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 
 import '../models/product.dart';
@@ -8,13 +9,14 @@ import '../screens/admin/admin_management_screen.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/main/main_screen.dart';
 import '../screens/orders/create_order_screen.dart';
+import '../screens/orders/orders_screen.dart';
+import '../screens/products/products_screen.dart';
+import '../screens/profile/profile_screen.dart';
 import '../screens/public/public_home_screen.dart';
 import '../screens/public/public_product_details_screen.dart';
 import '../screens/public/public_products_screen.dart';
+import '../screens/reports/reports_screen.dart';
 import '../screens/splash/splash_screen.dart';
-import '../screens/products/products_screen.dart';
-import '../screens/orders/orders_screen.dart';
-import '../screens/profile/profile_screen.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -46,6 +48,16 @@ class AppRoutes {
 
   static const String profile = '/profile';
 
+  // ============================================================
+  // REPORTS
+  // ============================================================
+
+  static const String reports = '/reports';
+
+  // ============================================================
+  // ADMIN ROUTES
+  // ============================================================
+
   static const String adminDashboard =
       '/admin-dashboard';
 
@@ -60,7 +72,6 @@ class AppRoutes {
     RouteSettings settings,
   ) {
     switch (settings.name) {
-
       // ========================================================
       // SPLASH
       // ========================================================
@@ -110,8 +121,7 @@ class AppRoutes {
         }
 
         return MaterialPageRoute(
-          builder: (_) =>
-              PublicProductDetailsScreen(
+          builder: (_) => PublicProductDetailsScreen(
             product: arguments,
           ),
           settings: settings,
@@ -151,40 +161,41 @@ class AppRoutes {
       // PRODUCTS
       // ========================================================
 
-  case products:
-  if (!AuthService.instance.isLoggedIn) {
-    return MaterialPageRoute(
-      builder: (_) => const LoginRequiredScreen(
-        message:
-            'Please login to access products.',
-      ),
-      settings: settings,
-    );
-  }
+      case products:
+        if (!AuthService.instance.isLoggedIn) {
+          return MaterialPageRoute(
+            builder: (_) => const LoginRequiredScreen(
+              message:
+                  'Please login to access products.',
+            ),
+            settings: settings,
+          );
+        }
 
-  return MaterialPageRoute(
-    builder: (_) => const ProductsScreen(),
-    settings: settings,
-  );
+        return MaterialPageRoute(
+          builder: (_) => const ProductsScreen(),
+          settings: settings,
+        );
 
       // ========================================================
       // ORDERS
       // ========================================================
-case orders:
-  if (!AuthService.instance.isLoggedIn) {
-    return MaterialPageRoute(
-      builder: (_) => const LoginRequiredScreen(
-        message:
-            'Please login to access your orders.',
-      ),
-      settings: settings,
-    );
-  }
 
-  return MaterialPageRoute(
-    builder: (_) => const OrdersScreen(),
-    settings: settings,
-  );
+      case orders:
+        if (!AuthService.instance.isLoggedIn) {
+          return MaterialPageRoute(
+            builder: (_) => const LoginRequiredScreen(
+              message:
+                  'Please login to access your orders.',
+            ),
+            settings: settings,
+          );
+        }
+
+        return MaterialPageRoute(
+          builder: (_) => const OrdersScreen(),
+          settings: settings,
+        );
 
       // ========================================================
       // CREATE ORDER
@@ -211,20 +222,59 @@ case orders:
       // ========================================================
 
       case profile:
-  if (!AuthService.instance.isLoggedIn) {
-    return MaterialPageRoute(
-      builder: (_) => const LoginRequiredScreen(
-        message:
-            'Please login to access your profile.',
-      ),
-      settings: settings,
-    );
-  }
+        if (!AuthService.instance.isLoggedIn) {
+          return MaterialPageRoute(
+            builder: (_) => const LoginRequiredScreen(
+              message:
+                  'Please login to access your profile.',
+            ),
+            settings: settings,
+          );
+        }
 
-  return MaterialPageRoute(
-    builder: (_) => const ProfileScreen(),
-    settings: settings,
-  );
+        return MaterialPageRoute(
+          builder: (_) => const ProfileScreen(),
+          settings: settings,
+        );
+
+      // ========================================================
+      // REPORTS
+      //
+      // SELLER + BUYER
+      //
+      // Admins can also access the same route, but their
+      // dedicated Admin Dashboard remains separate.
+      // ========================================================
+
+      case reports:
+        final user =
+            AuthService.instance.currentUser;
+
+        if (user == null) {
+          return MaterialPageRoute(
+            builder: (_) => const LoginRequiredScreen(
+              message:
+                  'Please login to access reports.',
+            ),
+            settings: settings,
+          );
+        }
+
+        if (user.isSeller || user.isBuyer || user.isAnyAdmin) {
+          return MaterialPageRoute(
+            builder: (_) => const ReportsScreen(),
+            settings: settings,
+          );
+        }
+
+        return MaterialPageRoute(
+          builder: (_) => const AccessDeniedScreen(
+            message:
+                'You do not have permission to access reports.',
+          ),
+          settings: settings,
+        );
+
       // ========================================================
       // ADMIN DASHBOARD
       //
@@ -346,9 +396,7 @@ class LoginRequiredScreen extends StatelessWidget {
                     .colorScheme
                     .primary,
               ),
-
               const SizedBox(height: 20),
-
               const Text(
                 'Login Required',
                 style: TextStyle(
@@ -356,16 +404,12 @@ class LoginRequiredScreen extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-
               const SizedBox(height: 12),
-
               Text(
                 message,
                 textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: 28),
-
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -379,9 +423,7 @@ class LoginRequiredScreen extends StatelessWidget {
                   label: const Text('Login'),
                 ),
               ),
-
               const SizedBox(height: 12),
-
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
@@ -430,9 +472,7 @@ class AccessDeniedScreen extends StatelessWidget {
                 size: 64,
                 color: Colors.red.shade400,
               ),
-
               const SizedBox(height: 16),
-
               const Text(
                 'Access Denied',
                 style: TextStyle(
@@ -440,16 +480,12 @@ class AccessDeniedScreen extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-
               const SizedBox(height: 12),
-
               Text(
                 message,
                 textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: 24),
-
               FilledButton(
                 onPressed: () {
                   Navigator.pop(context);
@@ -498,9 +534,7 @@ class RouteErrorScreen extends StatelessWidget {
                     .colorScheme
                     .error,
               ),
-
               const SizedBox(height: 16),
-
               Text(
                 title,
                 style: const TextStyle(
@@ -508,16 +542,12 @@ class RouteErrorScreen extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-
               const SizedBox(height: 12),
-
               Text(
                 message,
                 textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: 24),
-
               FilledButton(
                 onPressed: () {
                   Navigator.pop(context);

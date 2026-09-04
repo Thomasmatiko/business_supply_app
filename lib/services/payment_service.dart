@@ -1,5 +1,6 @@
 
 import '../database/database_helper.dart';
+import 'activity_log_service.dart';
 
 class PaymentService {
   // ============================================================
@@ -11,6 +12,9 @@ class PaymentService {
 
   final DatabaseHelper _databaseHelper =
       DatabaseHelper.instance;
+
+  final ActivityLogService _activityLogService =
+      ActivityLogService.instance;
 
   PaymentService._init();
 
@@ -59,11 +63,17 @@ class PaymentService {
     required String method,
     String? transactionReference,
   }) async {
-    if (orderId.trim().isEmpty) {
+    final cleanOrderId = orderId.trim();
+    final cleanBuyerId = buyerId.trim();
+    final cleanMethod = method.trim().toLowerCase();
+    final cleanReference =
+        transactionReference?.trim();
+
+    if (cleanOrderId.isEmpty) {
       throw Exception('Order ID is required.');
     }
 
-    if (buyerId.trim().isEmpty) {
+    if (cleanBuyerId.isEmpty) {
       throw Exception('Buyer ID is required.');
     }
 
@@ -73,43 +83,162 @@ class PaymentService {
       );
     }
 
-    if (!paymentMethods.contains(method)) {
+    if (!paymentMethods.contains(cleanMethod)) {
       throw Exception('Invalid payment method.');
     }
+
+    // ----------------------------------------------------------
+    // Verify order
+    // ----------------------------------------------------------
+
+    final orderResult = await _databaseHelper.query(
+      'orders',
+      where: 'id = ?',
+      whereArgs: [cleanOrderId],
+      limit: 1,
+    );
+
+    if (orderResult.isEmpty) {
+      throw Exception('Order not found.');
+    }
+
+    final order = orderResult.first;
+
+    final orderBuyerId =
+        order['buyer_id']?.toString().trim() ?? '';
+
+    if (orderBuyerId.isEmpty ||
+        orderBuyerId != cleanBuyerId) {
+      throw Exception(
+        'Buyer does not match the order.',
+      );
+    }
+
+    // ----------------------------------------------------------
+    // Verify buyer exists
+    // ----------------------------------------------------------
+
+    final buyerResult = await _databaseHelper.query(
+      'users',
+      columns: [
+        'id',
+        'name',
+      ],
+      where: 'id = ?',
+      whereArgs: [cleanBuyerId],
+      limit: 1,
+    );
+
+    if (buyerResult.isEmpty) {
+      throw Exception('Buyer not found.');
+    }
+
+    final buyerName =
+        buyerResult.first['name']?.toString();
+
+    // ----------------------------------------------------------
+    // Prevent duplicate active payment
+    //
+    // A failed/cancelled payment can be replaced.
+    // Pending/completed payments cannot be duplicated.
+    // ----------------------------------------------------------
+
+    final existingPayments =
+        await _databaseHelper.query(
+      'payments',
+      where:
+          'order_id = ? AND status IN (?, ?)',
+      whereArgs: [
+        cleanOrderId,
+        pending,
+        completed,
+      ],
+      limit: 1,
+    );
+
+    if (existingPayments.isNotEmpty) {
+      final existingStatus =
+          existingPayments.first['status']
+              ?.toString();
+
+      if (existingStatus == completed) {
+        throw Exception(
+          'This order has already been paid.',
+        );
+      }
+
+      throw Exception(
+        'This order already has a pending payment.',
+      );
+    }
+
+    // ----------------------------------------------------------
+    // Generate payment
+    // ----------------------------------------------------------
 
     final paymentId =
         'PAY-${DateTime.now().microsecondsSinceEpoch}';
 
-    final now = DateTime.now().toIso8601String();
+    final now =
+        DateTime.now().toIso8601String();
 
     final payment = {
       'id': paymentId,
-      'order_id': orderId,
-      'buyer_id': buyerId,
+      'order_id': cleanOrderId,
+      'buyer_id': cleanBuyerId,
       'amount': amount,
-      'payment_method': method,
+      'payment_method': cleanMethod,
       'status': pending,
       'transaction_reference':
-          transactionReference?.trim(),
+          cleanReference?.isEmpty == true
+              ? null
+              : cleanReference,
       'created_at': now,
       'updated_at': now,
       'paid_at': null,
     };
 
-    await _databaseHelper.insert(
-      'payments',
-      payment,
+    // ----------------------------------------------------------
+    // Payment + order synchronization
+    // ----------------------------------------------------------
+
+    final db =
+        await _databaseHelper.database;
+
+    await db.transaction(
+      (txn) async {
+        await txn.insert(
+          'payments',
+          payment,
+        );
+
+        await txn.update(
+          'orders',
+          {
+            'payment_status': pending,
+            'payment_id': paymentId,
+          },
+          where: 'id = ?',
+          whereArgs: [cleanOrderId],
+        );
+      },
     );
 
-    // Keep the order payment information synchronized.
-    await _databaseHelper.update(
-      'orders',
-      {
-        'payment_status': pending,
-        'payment_id': paymentId,
-      },
-      where: 'id = ?',
-      whereArgs: [orderId],
+    // ----------------------------------------------------------
+    // Activity + Audit
+    // ----------------------------------------------------------
+
+    await _activityLogService.logAction(
+      userId: cleanBuyerId,
+      userName: buyerName,
+      action: 'CREATE_PAYMENT',
+      type: 'payment',
+      entityType: 'payment',
+      entityId: paymentId,
+      description:
+          'Payment $paymentId was created for order '
+          '$cleanOrderId. Amount: $amount. '
+          'Method: $cleanMethod. Status: $pending.',
     );
 
     return paymentId;
@@ -130,7 +259,7 @@ class PaymentService {
         await _databaseHelper.query(
       'payments',
       where: 'id = ?',
-      whereArgs: [paymentId],
+      whereArgs: [paymentId.trim()],
       limit: 1,
     );
 
@@ -158,7 +287,8 @@ class PaymentService {
       return null;
     }
 
-    final result = await _databaseHelper.rawQuery(
+    final result =
+        await _databaseHelper.rawQuery(
       '''
       SELECT
         p.id AS payment_id,
@@ -203,7 +333,7 @@ class PaymentService {
 
       LIMIT 1
       ''',
-      [paymentId],
+      [paymentId.trim()],
     );
 
     if (result.isEmpty) {
@@ -215,8 +345,6 @@ class PaymentService {
 
   // ============================================================
   // GET ALL PAYMENTS FOR ADMIN
-  //
-  // Includes buyer and seller information.
   // ============================================================
 
   Future<List<Map<String, dynamic>>>
@@ -287,7 +415,7 @@ class PaymentService {
         await _databaseHelper.query(
       'payments',
       where: 'order_id = ?',
-      whereArgs: [orderId],
+      whereArgs: [orderId.trim()],
       orderBy: 'created_at DESC',
       limit: 1,
     );
@@ -313,7 +441,7 @@ class PaymentService {
     return _databaseHelper.query(
       'payments',
       where: 'buyer_id = ?',
-      whereArgs: [buyerId],
+      whereArgs: [buyerId.trim()],
       orderBy: 'created_at DESC',
     );
   }
@@ -330,6 +458,39 @@ class PaymentService {
   }
 
   // ============================================================
+  // VALIDATE STATUS TRANSITION
+  // ============================================================
+
+  bool _isValidStatusTransition(
+    String currentStatus,
+    String newStatus,
+  ) {
+    if (currentStatus == newStatus) {
+      return false;
+    }
+
+    switch (currentStatus) {
+      case pending:
+        return newStatus == completed ||
+            newStatus == failed ||
+            newStatus == cancelled;
+
+      case completed:
+        return false;
+
+      case failed:
+        return newStatus == pending ||
+            newStatus == cancelled;
+
+      case cancelled:
+        return false;
+
+      default:
+        return false;
+    }
+  }
+
+  // ============================================================
   // UPDATE PAYMENT STATUS
   // ============================================================
 
@@ -337,48 +498,175 @@ class PaymentService {
     required String paymentId,
     required String status,
   }) async {
-    if (paymentId.trim().isEmpty) {
+    final cleanPaymentId =
+        paymentId.trim();
+
+    final cleanStatus =
+        status.trim().toLowerCase();
+
+    if (cleanPaymentId.isEmpty) {
       throw Exception('Payment ID is required.');
     }
 
-    if (!paymentStatuses.contains(status)) {
+    if (!paymentStatuses.contains(cleanStatus)) {
       throw Exception('Invalid payment status.');
     }
 
-    final now = DateTime.now().toIso8601String();
+    // ----------------------------------------------------------
+    // Get current payment
+    // ----------------------------------------------------------
+
+    final payment =
+        await getPaymentById(cleanPaymentId);
+
+    if (payment == null) {
+      throw Exception('Payment not found.');
+    }
+
+    final currentStatus =
+        payment['status']?.toString() ?? pending;
+
+    if (currentStatus == cleanStatus) {
+      return 0;
+    }
+
+    if (!_isValidStatusTransition(
+      currentStatus,
+      cleanStatus,
+    )) {
+      throw Exception(
+        'Invalid payment status transition: '
+        '$currentStatus → $cleanStatus.',
+      );
+    }
+
+    final orderId =
+        payment['order_id']?.toString();
+
+    final buyerId =
+        payment['buyer_id']?.toString();
+
+    if (orderId == null ||
+        orderId.trim().isEmpty) {
+      throw Exception(
+        'Payment has no valid order.',
+      );
+    }
+
+    // ----------------------------------------------------------
+    // Get buyer
+    // ----------------------------------------------------------
+
+    String? buyerName;
+
+    if (buyerId != null &&
+        buyerId.trim().isNotEmpty) {
+      final buyer =
+          await _databaseHelper.query(
+        'users',
+        columns: [
+          'name',
+        ],
+        where: 'id = ?',
+        whereArgs: [buyerId.trim()],
+        limit: 1,
+      );
+
+      if (buyer.isNotEmpty) {
+        buyerName =
+            buyer.first['name']?.toString();
+      }
+    }
+
+    // ----------------------------------------------------------
+    // Prepare values
+    // ----------------------------------------------------------
+
+    final now =
+        DateTime.now().toIso8601String();
 
     final Map<String, dynamic> values = {
-  'status': status,
-  'updated_at': now,
-};
+      'status': cleanStatus,
+      'updated_at': now,
+    };
 
-    if (status == completed) {
+    if (cleanStatus == completed) {
       values['paid_at'] = now;
     } else {
       values['paid_at'] = null;
     }
 
-    final updated = await _databaseHelper.update(
-      'payments',
-      values,
-      where: 'id = ?',
-      whereArgs: [paymentId],
+    // ----------------------------------------------------------
+    // Update payment + order atomically
+    // ----------------------------------------------------------
+
+    final db =
+        await _databaseHelper.database;
+
+    int updated = 0;
+
+    await db.transaction(
+      (txn) async {
+        updated = await txn.update(
+          'payments',
+          values,
+          where: 'id = ?',
+          whereArgs: [cleanPaymentId],
+        );
+
+        if (updated == 0) {
+          throw Exception(
+            'Payment could not be updated.',
+          );
+        }
+
+        await txn.update(
+          'orders',
+          {
+            'payment_status': cleanStatus,
+            'payment_id': cleanPaymentId,
+          },
+          where: 'id = ?',
+          whereArgs: [orderId],
+        );
+      },
     );
 
-    // Synchronize the order payment status.
-    final payment = await getPaymentById(paymentId);
+    // ----------------------------------------------------------
+    // Activity + Audit
+    // ----------------------------------------------------------
 
-    if (payment != null) {
-      await _databaseHelper.update(
-        'orders',
-        {
-          'payment_status': status,
-          'payment_id': paymentId,
-        },
-        where: 'id = ?',
-        whereArgs: [payment['order_id']],
-      );
+    String action;
+
+    switch (cleanStatus) {
+      case completed:
+        action = 'COMPLETE_PAYMENT';
+        break;
+
+      case failed:
+        action = 'FAIL_PAYMENT';
+        break;
+
+      case cancelled:
+        action = 'CANCEL_PAYMENT';
+        break;
+
+      default:
+        action = 'UPDATE_PAYMENT_STATUS';
     }
+
+    await _activityLogService.logAction(
+      userId: buyerId,
+      userName: buyerName,
+      action: action,
+      type: 'payment',
+      entityType: 'payment',
+      entityId: cleanPaymentId,
+      description:
+          'Payment $cleanPaymentId for order '
+          '$orderId changed from $currentStatus '
+          'to $cleanStatus.',
+    );
 
     return updated;
   }
@@ -429,15 +717,111 @@ class PaymentService {
   Future<int> deletePayment(
     String paymentId,
   ) async {
-    if (paymentId.trim().isEmpty) {
+    final cleanPaymentId =
+        paymentId.trim();
+
+    if (cleanPaymentId.isEmpty) {
       throw Exception('Payment ID is required.');
     }
 
-    return _databaseHelper.delete(
-      'payments',
-      where: 'id = ?',
-      whereArgs: [paymentId],
+    // ----------------------------------------------------------
+    // Get payment before deletion so we know what to audit.
+    // ----------------------------------------------------------
+
+    final payment =
+        await getPaymentById(cleanPaymentId);
+
+    if (payment == null) {
+      return 0;
+    }
+
+    final orderId =
+        payment['order_id']?.toString();
+
+    final buyerId =
+        payment['buyer_id']?.toString();
+
+    final status =
+        payment['status']?.toString() ?? '';
+
+    // ----------------------------------------------------------
+    // Get buyer name
+    // ----------------------------------------------------------
+
+    String? buyerName;
+
+    if (buyerId != null &&
+        buyerId.trim().isNotEmpty) {
+      final buyer =
+          await _databaseHelper.query(
+        'users',
+        columns: [
+          'name',
+        ],
+        where: 'id = ?',
+        whereArgs: [buyerId.trim()],
+        limit: 1,
+      );
+
+      if (buyer.isNotEmpty) {
+        buyerName =
+            buyer.first['name']?.toString();
+      }
+    }
+
+    // ----------------------------------------------------------
+    // Delete payment and clean order reference.
+    // ----------------------------------------------------------
+
+    final db =
+        await _databaseHelper.database;
+
+    int deleted = 0;
+
+    await db.transaction(
+      (txn) async {
+        deleted = await txn.delete(
+          'payments',
+          where: 'id = ?',
+          whereArgs: [cleanPaymentId],
+        );
+
+        if (deleted > 0 &&
+            orderId != null &&
+            orderId.trim().isNotEmpty) {
+          await txn.update(
+            'orders',
+            {
+              'payment_id': null,
+              'payment_status': pending,
+            },
+            where: 'id = ?',
+            whereArgs: [orderId],
+          );
+        }
+      },
     );
+
+    // ----------------------------------------------------------
+    // Activity + Audit
+    // ----------------------------------------------------------
+
+    if (deleted > 0) {
+      await _activityLogService.logAction(
+        userId: buyerId,
+        userName: buyerName,
+        action: 'DELETE_PAYMENT',
+        type: 'payment',
+        entityType: 'payment',
+        entityId: cleanPaymentId,
+        description:
+            'Payment $cleanPaymentId was deleted.'
+            ' Order: ${orderId ?? 'unknown'}.'
+            ' Previous status: $status.',
+      );
+    }
+
+    return deleted;
   }
 
   // ============================================================
@@ -454,7 +838,9 @@ class PaymentService {
       return 0;
     }
 
-    return (result.first['count'] as num?)?.toInt() ?? 0;
+    return (result.first['count'] as num?)
+            ?.toInt() ??
+        0;
   }
 
   // ============================================================
@@ -475,18 +861,20 @@ class PaymentService {
       FROM payments
       WHERE buyer_id = ?
       ''',
-      [buyerId],
+      [buyerId.trim()],
     );
 
     if (result.isEmpty) {
       return 0;
     }
 
-    return (result.first['count'] as num?)?.toInt() ?? 0;
+    return (result.first['count'] as num?)
+            ?.toInt() ??
+        0;
   }
 
   // ============================================================
-  // TOTAL PAYMENT AMOUNT
+  // TOTAL COMPLETED PAYMENT AMOUNT
   // ============================================================
 
   Future<double> getTotalPaymentAmount() async {
@@ -495,18 +883,22 @@ class PaymentService {
       '''
       SELECT COALESCE(SUM(amount), 0) AS total
       FROM payments
+      WHERE status = ?
       ''',
+      [completed],
     );
 
     if (result.isEmpty) {
       return 0.0;
     }
 
-    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
+    return (result.first['total'] as num?)
+            ?.toDouble() ??
+        0.0;
   }
 
   // ============================================================
-  // BUYER TOTAL PAYMENT AMOUNT
+  // BUYER TOTAL COMPLETED PAYMENT AMOUNT
   // ============================================================
 
   Future<double> getBuyerTotalPaymentAmount(
@@ -522,15 +914,21 @@ class PaymentService {
       SELECT COALESCE(SUM(amount), 0) AS total
       FROM payments
       WHERE buyer_id = ?
+      AND status = ?
       ''',
-      [buyerId],
+      [
+        buyerId.trim(),
+        completed,
+      ],
     );
 
     if (result.isEmpty) {
       return 0.0;
     }
 
-    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
+    return (result.first['total'] as num?)
+            ?.toDouble() ??
+        0.0;
   }
 
   // ============================================================
@@ -540,14 +938,17 @@ class PaymentService {
   Future<List<Map<String, dynamic>>> getPaymentsByStatus(
     String status,
   ) async {
-    if (!paymentStatuses.contains(status)) {
+    final cleanStatus =
+        status.trim().toLowerCase();
+
+    if (!paymentStatuses.contains(cleanStatus)) {
       throw Exception('Invalid payment status.');
     }
 
     return _databaseHelper.query(
       'payments',
       where: 'status = ?',
-      whereArgs: [status],
+      whereArgs: [cleanStatus],
       orderBy: 'created_at DESC',
     );
   }
@@ -565,16 +966,20 @@ class PaymentService {
       return [];
     }
 
-    if (!paymentStatuses.contains(status)) {
+    final cleanStatus =
+        status.trim().toLowerCase();
+
+    if (!paymentStatuses.contains(cleanStatus)) {
       throw Exception('Invalid payment status.');
     }
 
     return _databaseHelper.query(
       'payments',
-      where: 'buyer_id = ? AND status = ?',
+      where:
+          'buyer_id = ? AND status = ?',
       whereArgs: [
-        buyerId,
-        status,
+        buyerId.trim(),
+        cleanStatus,
       ],
       orderBy: 'created_at DESC',
     );

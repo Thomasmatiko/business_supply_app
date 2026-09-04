@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
+import '../../services/activity_log_service.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -25,6 +26,9 @@ class _ChangePasswordScreenState
   final _confirmPasswordController =
       TextEditingController();
 
+      final ActivityLogService _activityLogService =
+    ActivityLogService.instance;
+
   bool _obscureCurrentPassword = true;
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
@@ -40,92 +44,136 @@ class _ChangePasswordScreenState
   }
 
   Future<void> _changePassword() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    final user = AuthService.instance.currentUser;
-
-    if (user == null) {
-      _showMessage(
-        'No logged-in user found.',
-        isError: true,
-      );
-      return;
-    }
-
-    final currentPassword =
-        _currentPasswordController.text.trim();
-
-    final newPassword =
-        _newPasswordController.text.trim();
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final success =
-          await UserService.instance.changePassword(
-        userId: user.id,
-        currentPassword: currentPassword,
-        newPassword: newPassword,
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      if (!success) {
-        setState(() {
-          _isLoading = false;
-        });
-
-        _showMessage(
-          'Current password is incorrect.',
-          isError: true,
-        );
-
-        return;
-      }
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      _currentPasswordController.clear();
-      _newPasswordController.clear();
-      _confirmPasswordController.clear();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Password changed successfully.',
-          ),
-        ),
-      );
-
-      Navigator.of(context).pop();
-    } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      _showMessage(
-        'Failed to change password. Please try again.',
-        isError: true,
-      );
-
-      debugPrint(
-        'Change password error: $e',
-      );
-    }
+  if (!_formKey.currentState!.validate()) {
+    return;
   }
 
+  final user = AuthService.instance.currentUser;
+
+  if (user == null) {
+    await _activityLogService.logActivity(
+      action: 'password_change_failed',
+      description:
+          'Password change was attempted without a logged-in user.',
+      type: 'authentication',
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    _showMessage(
+      'No logged-in user found.',
+      isError: true,
+    );
+
+    return;
+  }
+
+  final currentPassword =
+      _currentPasswordController.text.trim();
+
+  final newPassword =
+      _newPasswordController.text.trim();
+
+  setState(() {
+    _isLoading = true;
+  });
+
+  try {
+    final success =
+        await UserService.instance.changePassword(
+      userId: user.id,
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+
+    if (!success) {
+      await _activityLogService.logActivity(
+        userId: user.id,
+        userName: user.name,
+        action: 'password_change_failed',
+        description:
+            '${user.name} attempted to change their password, but the current password was incorrect.',
+        type: 'authentication',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      _showMessage(
+        'Current password is incorrect.',
+        isError: true,
+      );
+
+      return;
+    }
+
+    await _activityLogService.logAction(
+      userId: user.id,
+      userName: user.name,
+      action: 'password_change',
+      description:
+          '${user.name} successfully changed their password.',
+      type: 'authentication',
+      entityType: 'user',
+      entityId: user.id,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    _currentPasswordController.clear();
+    _newPasswordController.clear();
+    _confirmPasswordController.clear();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Password changed successfully.',
+        ),
+      ),
+    );
+
+    Navigator.of(context).pop();
+  } catch (e) {
+    await _activityLogService.logActivity(
+      userId: user.id,
+      userName: user.name,
+      action: 'password_change_failed',
+      description:
+          '${user.name} encountered an error while changing their password.',
+      type: 'authentication',
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    _showMessage(
+      'Failed to change password. Please try again.',
+      isError: true,
+    );
+
+    debugPrint(
+      'Change password error: $e',
+    );
+  }
+}
   void _showMessage(
     String message, {
     bool isError = false,

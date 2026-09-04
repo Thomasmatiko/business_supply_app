@@ -1,6 +1,8 @@
-
 import '../database/database_helper.dart';
 import '../models/user.dart';
+import 'activity_log_service.dart';
+import 'auth_service.dart';
+import 'notification_service.dart';
 
 class UserService {
   static final UserService instance =
@@ -8,6 +10,9 @@ class UserService {
 
   final DatabaseHelper _databaseHelper =
       DatabaseHelper.instance;
+
+  final ActivityLogService _activityLogService =
+      ActivityLogService.instance;
 
   UserService._init();
 
@@ -20,6 +25,33 @@ class UserService {
 
   static const String leaderAdminEmail =
       'thomasmatiko021@gmail.com';
+
+  // ============================================================
+  // ACTIVITY / AUDIT LOGGING
+  // ============================================================
+
+  Future<void> _logUserAction({
+    String? userId,
+    String? userName,
+    required String action,
+    required String description,
+    String? entityId,
+  }) async {
+    try {
+      await _activityLogService.logAction(
+        userId: userId,
+        userName: userName,
+        action: action,
+        description: description,
+        type: 'user',
+        entityType: 'user',
+        entityId: entityId,
+        audit: true,
+      );
+    } catch (_) {
+      // Logging failure must never break the user operation.
+    }
+  }
 
   // ============================================================
   // GET ALL USERS
@@ -99,10 +131,42 @@ class UserService {
       email: user.email.trim().toLowerCase(),
     );
 
-    return db.insert(
+    final result = await db.insert(
       'users',
       normalizedUser.toMap(),
     );
+
+    // ----------------------------------------------------------
+    // ACTIVITY / AUDIT
+    // ----------------------------------------------------------
+
+    await _logUserAction(
+      userId: normalizedUser.id,
+      userName: normalizedUser.name,
+      action: 'CREATE_USER',
+      description:
+          '${normalizedUser.name} was registered as a '
+          '${normalizedUser.role}.',
+      entityId: normalizedUser.id,
+    );
+
+    // ----------------------------------------------------------
+    // NOTIFY LEADER ADMIN
+    // ----------------------------------------------------------
+
+    try {
+      await NotificationService.instance.notifyAccount(
+        userId: leaderAdminId,
+        title: 'New User Registered',
+        message:
+            '${normalizedUser.name} has been registered as a '
+            '${normalizedUser.role}.',
+      );
+    } catch (_) {
+      // Notification failure must not break user creation.
+    }
+
+    return result;
   }
 
   // ============================================================
@@ -123,16 +187,63 @@ class UserService {
 
     final db = await _databaseHelper.database;
 
+    // ----------------------------------------------------------
+    // GET EXISTING USER BEFORE UPDATE
+    // ----------------------------------------------------------
+
+    final existingUser =
+        await getUserById(user.id);
+
     final normalizedUser = user.copyWith(
       email: user.email.trim().toLowerCase(),
     );
 
-    return db.update(
+    final result = await db.update(
       'users',
       normalizedUser.toMap(),
       where: 'id = ?',
       whereArgs: [user.id],
     );
+
+    // ----------------------------------------------------------
+    // ACTIVITY / AUDIT
+    // ----------------------------------------------------------
+
+    if (result > 0) {
+      await _logUserAction(
+        userId: normalizedUser.id,
+        userName: normalizedUser.name,
+        action: 'UPDATE_USER',
+        description:
+            '${normalizedUser.name} account information was updated.',
+        entityId: normalizedUser.id,
+      );
+    }
+
+    // ----------------------------------------------------------
+    // NOTIFY UPDATED USER
+    // ----------------------------------------------------------
+
+    if (result > 0) {
+      try {
+        await NotificationService.instance.notifyAccount(
+          userId: normalizedUser.id,
+          title: 'Account Updated',
+          message:
+              'Your account information has been updated.',
+        );
+      } catch (_) {
+        // Notification failure must not break user update.
+      }
+    }
+
+    // Prevent unused variable warning while preserving the
+    // existing-user lookup for future audit comparison.
+    if (existingUser != null) {
+      // Existing user successfully loaded before update.
+    }
+
+    return result;
   }
 
   // ============================================================
@@ -154,11 +265,63 @@ class UserService {
 
     final db = await _databaseHelper.database;
 
-    return db.delete(
+    // ----------------------------------------------------------
+    // GET USER BEFORE DELETION
+    // ----------------------------------------------------------
+
+    final user = await getUserById(id);
+
+    final result = await db.delete(
       'users',
       where: 'id = ?',
       whereArgs: [id],
     );
+
+    // ----------------------------------------------------------
+    // AUDIT
+    //
+    // AdminService normally handles administrator-controlled
+    // deletion logging. This generic method logs the deletion
+    // only when it is used directly.
+    // ----------------------------------------------------------
+
+    if (result > 0 && user != null) {
+      final currentUser =
+          AuthService.instance.currentUser;
+
+      await _logUserAction(
+        userId: currentUser?.id ?? user.id,
+        userName: currentUser?.name ?? user.name,
+        action: 'DELETE_USER',
+        description:
+            '${user.name} (${user.email}) was deleted from '
+            'the system.',
+        entityId: user.id,
+      );
+    }
+
+    // ----------------------------------------------------------
+    // NOTIFY LEADER ADMIN
+    //
+    // The user is already deleted, so notification is sent
+    // to the Leader Admin rather than the deleted user.
+    // ----------------------------------------------------------
+
+    if (result > 0 && user != null) {
+      try {
+        await NotificationService.instance.notifyAccount(
+          userId: leaderAdminId,
+          title: 'User Deleted',
+          message:
+              '${user.name} (${user.email}) has been deleted '
+              'from the system.',
+        );
+      } catch (_) {
+        // Notification failure must not break user deletion.
+      }
+    }
+
+    return result;
   }
 
   // ============================================================
@@ -173,7 +336,7 @@ class UserService {
     final normalizedEmail =
         leaderEmail.trim().toLowerCase();
 
-    return db.delete(
+    final result = await db.delete(
       'users',
       where:
           'LOWER(TRIM(email)) != ? AND id != ?',
@@ -182,6 +345,46 @@ class UserService {
         leaderAdminId,
       ],
     );
+
+    // ----------------------------------------------------------
+    // ACTIVITY / AUDIT
+    // ----------------------------------------------------------
+
+    if (result > 0) {
+      final currentUser =
+          AuthService.instance.currentUser;
+
+      await _logUserAction(
+        userId: currentUser?.id ?? leaderAdminId,
+        userName:
+            currentUser?.name ?? 'Leader Admin',
+        action: 'DELETE_ALL_USERS_EXCEPT_LEADER',
+        description:
+            '$result user account(s) were removed from '
+            'the system, excluding the permanent Leader Admin.',
+        entityId: leaderAdminId,
+      );
+    }
+
+    // ----------------------------------------------------------
+    // NOTIFY LEADER ADMIN
+    // ----------------------------------------------------------
+
+    if (result > 0) {
+      try {
+        await NotificationService.instance.notifyAccount(
+          userId: leaderAdminId,
+          title: 'Users Reset',
+          message:
+              '$result user account(s) were removed from '
+              'the system.',
+        );
+      } catch (_) {
+        // Notification failure must not break reset operation.
+      }
+    }
+
+    return result;
   }
 
   // ============================================================
@@ -196,7 +399,7 @@ class UserService {
     final normalizedEmail =
         email.trim().toLowerCase();
 
-    return db.update(
+    final result = await db.update(
       'users',
       {
         'role': 'admin',
@@ -209,6 +412,30 @@ class UserService {
         normalizedEmail,
       ],
     );
+
+    // ----------------------------------------------------------
+    // NOTIFY LEADER ADMIN
+    //
+    // This operation is intentionally not written to the
+    // activity/audit log because it may run automatically during
+    // application initialization.
+    // ----------------------------------------------------------
+
+    if (result > 0) {
+      try {
+        await NotificationService.instance.notifyAccount(
+          userId: leaderAdminId,
+          title: 'Leader Admin Verified',
+          message:
+              'Your Leader Admin account has been verified '
+              'and remains active.',
+        );
+      } catch (_) {
+        // Notification failure must not break verification.
+      }
+    }
+
+    return result;
   }
 
   // ============================================================
@@ -241,6 +468,8 @@ class UserService {
 
   // ============================================================
   // CHANGE PASSWORD
+  //
+  // Used when the logged-in user knows their current password.
   // ============================================================
 
   Future<bool> changePassword({
@@ -250,10 +479,16 @@ class UserService {
   }) async {
     final db = await _databaseHelper.database;
 
-    // Verify the current password first.
+    // ----------------------------------------------------------
+    // VERIFY CURRENT PASSWORD
+    // ----------------------------------------------------------
+
     final result = await db.query(
       'users',
-      columns: ['id'],
+      columns: [
+        'id',
+        'name',
+      ],
       where:
           'id = ? AND password = ?',
       whereArgs: [
@@ -268,7 +503,13 @@ class UserService {
       return false;
     }
 
-    // Update the password.
+    final userName =
+        result.first['name'] as String? ?? 'User';
+
+    // ----------------------------------------------------------
+    // UPDATE PASSWORD
+    // ----------------------------------------------------------
+
     final updated = await db.update(
       'users',
       {
@@ -277,6 +518,131 @@ class UserService {
       where: 'id = ?',
       whereArgs: [userId],
     );
+
+    // ----------------------------------------------------------
+    // ACTIVITY / AUDIT
+    // ----------------------------------------------------------
+
+    if (updated > 0) {
+      await _logUserAction(
+        userId: userId,
+        userName: userName,
+        action: 'CHANGE_PASSWORD',
+        description:
+            '$userName changed the account password.',
+        entityId: userId,
+      );
+    }
+
+    // ----------------------------------------------------------
+    // NOTIFY USER
+    // ----------------------------------------------------------
+
+    if (updated > 0) {
+      try {
+        await NotificationService.instance.notifyAccount(
+          userId: userId,
+          title: 'Password Changed',
+          message:
+              'Your account password has been changed successfully.',
+        );
+      } catch (_) {
+        // Notification failure must not break password change.
+      }
+    }
+
+    return updated > 0;
+  }
+
+  // ============================================================
+  // RESET PASSWORD BY EMAIL
+  //
+  // Used by Forgot Password.
+  //
+  // Unlike changePassword(), this method does not require the
+  // old/current password.
+  // ============================================================
+
+  Future<bool> resetPasswordByEmail({
+    required String email,
+    required String newPassword,
+  }) async {
+    final db = await _databaseHelper.database;
+
+    final normalizedEmail =
+        email.trim().toLowerCase();
+
+    // ----------------------------------------------------------
+    // VERIFY ACCOUNT EXISTS
+    // ----------------------------------------------------------
+
+    final userResult = await db.query(
+      'users',
+      columns: [
+        'id',
+        'name',
+      ],
+      where: 'LOWER(TRIM(email)) = ?',
+      whereArgs: [normalizedEmail],
+      limit: 1,
+    );
+
+    if (userResult.isEmpty) {
+      return false;
+    }
+
+    final userId =
+        userResult.first['id'] as String;
+
+    final userName =
+        userResult.first['name'] as String? ??
+            'User';
+
+    // ----------------------------------------------------------
+    // UPDATE PASSWORD
+    // ----------------------------------------------------------
+
+    final updated = await db.update(
+      'users',
+      {
+        'password': newPassword,
+      },
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+
+    // ----------------------------------------------------------
+    // ACTIVITY / AUDIT
+    // ----------------------------------------------------------
+
+    if (updated > 0) {
+      await _logUserAction(
+        userId: userId,
+        userName: userName,
+        action: 'RESET_PASSWORD',
+        description:
+            '$userName password was reset through the '
+            'password recovery process.',
+        entityId: userId,
+      );
+    }
+
+    // ----------------------------------------------------------
+    // NOTIFY USER
+    // ----------------------------------------------------------
+
+    if (updated > 0) {
+      try {
+        await NotificationService.instance.notifyAccount(
+          userId: userId,
+          title: 'Password Reset',
+          message:
+              'Your account password has been reset successfully.',
+        );
+      } catch (_) {
+        // Notification failure must not break password reset.
+      }
+    }
 
     return updated > 0;
   }
@@ -412,4 +778,3 @@ class UserService {
         .toList();
   }
 }
-

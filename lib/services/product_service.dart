@@ -1,12 +1,35 @@
 import '../database/database_helper.dart';
 import '../models/product.dart';
-
+import '../services/activity_log_service.dart';
+import '../services/auth_service.dart';
 class ProductService {
   static final ProductService instance = ProductService._init();
 
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
+  final ActivityLogService _activityLogService =
+    ActivityLogService.instance;
+
   ProductService._init();
+
+  Future<void> _logProductAction({
+  required String action,
+  required String description,
+  String type = 'product',
+  String? entityId,
+}) async {
+  final user = AuthService.instance.currentUser;
+
+  await _activityLogService.logAction(
+    userId: user?.id,
+    userName: user?.name,
+    action: action,
+    description: description,
+    type: type,
+    entityType: 'product',
+    entityId: entityId,
+  );
+}
 
   // ============================================================
   // GET ALL PRODUCTS
@@ -77,20 +100,31 @@ class ProductService {
   // ============================================================
 
   Future<int> addProduct(
-    Product product, {
-    String? sellerId,
-  }) async {
-    final db = await _databaseHelper.database;
+  Product product, {
+  String? sellerId,
+}) async {
+  final db = await _databaseHelper.database;
 
-    final map = product.toMap();
+  final map = product.toMap();
 
-    map['seller_id'] = sellerId;
+  map['seller_id'] = sellerId;
 
-    return await db.insert(
-      'products',
-      map,
+  final result = await db.insert(
+    'products',
+    map,
+  );
+
+  if (result > 0) {
+    await _logProductAction(
+      action: 'product_created',
+      description:
+          'Created product "${product.name}" with stock ${product.stock}.',
+      entityId: product.id,
     );
   }
+
+  return result;
+}
 
   // ============================================================
   // UPDATE PRODUCT
@@ -100,25 +134,35 @@ class ProductService {
   // ============================================================
 
   Future<int> updateProduct(
-    Product product, {
-    String? sellerId,
-  }) async {
-    final db = await _databaseHelper.database;
+  Product product, {
+  String? sellerId,
+}) async {
+  final db = await _databaseHelper.database;
 
-    final map = product.toMap();
+  final map = product.toMap();
 
-    if (sellerId != null) {
-      map['seller_id'] = sellerId;
-    }
+  if (sellerId != null) {
+    map['seller_id'] = sellerId;
+  }
 
-    return await db.update(
-      'products',
-      map,
-      where: 'id = ?',
-      whereArgs: [product.id],
+  final result = await db.update(
+    'products',
+    map,
+    where: 'id = ?',
+    whereArgs: [product.id],
+  );
+
+  if (result > 0) {
+    await _logProductAction(
+      action: 'product_updated',
+      description:
+          'Updated product "${product.name}".',
+      entityId: product.id,
     );
   }
 
+  return result;
+}
   // ============================================================
   // UPDATE PRODUCT OWNER
   //
@@ -126,20 +170,34 @@ class ProductService {
   // ============================================================
 
   Future<int> updateProductSeller(
-    String productId,
-    String sellerId,
-  ) async {
-    final db = await _databaseHelper.database;
+  String productId,
+  String sellerId,
+) async {
+  final db = await _databaseHelper.database;
 
-    return await db.update(
-      'products',
-      {
-        'seller_id': sellerId,
-      },
-      where: 'id = ?',
-      whereArgs: [productId],
+  final product = await getProductById(productId);
+
+  final result = await db.update(
+    'products',
+    {
+      'seller_id': sellerId,
+    },
+    where: 'id = ?',
+    whereArgs: [productId],
+  );
+
+  if (result > 0) {
+    await _logProductAction(
+      action: 'product_owner_updated',
+      description: product != null
+          ? 'Updated the seller ownership of product "${product.name}".'
+          : 'Updated the seller ownership of product $productId.',
+      entityId: productId,
     );
   }
+
+  return result;
+}
 
 // DELETE PRODUCT
 
@@ -149,10 +207,18 @@ Future<int> deleteProduct(String id) async {
   final productId = id.trim();
 
   if (productId.isEmpty) {
+    await _logProductAction(
+      action: 'product_delete_failed',
+      description:
+          'Product deletion failed because the product ID was empty.',
+    );
+
     return 0;
   }
 
   final db = await _databaseHelper.database;
+
+  final product = await getProductById(productId);
 
   // ----------------------------------------------------------
   // CHECK ORDER HISTORY
@@ -167,8 +233,14 @@ Future<int> deleteProduct(String id) async {
   );
 
   if (existingOrders.isNotEmpty) {
-    // Product is referenced by an existing order.
-    // Do not delete it.
+    await _logProductAction(
+      action: 'product_delete_failed',
+      description: product != null
+          ? 'Could not delete product "${product.name}" because it is referenced by an existing order.'
+          : 'Could not delete product $productId because it is referenced by an existing order.',
+      entityId: productId,
+    );
+
     return 0;
   }
 
@@ -176,13 +248,24 @@ Future<int> deleteProduct(String id) async {
   // DELETE PRODUCT
   // ----------------------------------------------------------
 
-  return await db.delete(
+  final result = await db.delete(
     'products',
     where: 'id = ?',
     whereArgs: [productId],
   );
-}
 
+  if (result > 0) {
+    await _logProductAction(
+      action: 'product_deleted',
+      description: product != null
+          ? 'Deleted product "${product.name}".'
+          : 'Deleted product $productId.',
+      entityId: productId,
+    );
+  }
+
+  return result;
+}
   // ============================================================
   // REDUCE STOCK
   //
@@ -195,33 +278,57 @@ Future<int> deleteProduct(String id) async {
   // ============================================================
 
   Future<int> reduceStock(
-    String productId,
-    int quantity,
-  ) async {
-    final db = await _databaseHelper.database;
+  String productId,
+  int quantity,
+) async {
+  final db = await _databaseHelper.database;
 
-    final product = await getProductById(productId);
+  final product = await getProductById(productId);
 
-    if (product == null) {
-      return 0;
-    }
+  if (product == null) {
+    await _logProductAction(
+      action: 'stock_reduction_failed',
+      description:
+          'Stock reduction failed because product $productId was not found.',
+      entityId: productId,
+    );
 
-    if (quantity <= 0 || quantity > product.stock) {
-      return 0;
-    }
+    return 0;
+  }
 
-    final newStock = product.stock - quantity;
+  if (quantity <= 0 || quantity > product.stock) {
+    await _logProductAction(
+      action: 'stock_reduction_failed',
+      description:
+          'Stock reduction failed for product "${product.name}" because the requested quantity was invalid.',
+      entityId: productId,
+    );
 
-    return await db.update(
-      'products',
-      {
-        'stock': newStock,
-      },
-      where: 'id = ?',
-      whereArgs: [productId],
+    return 0;
+  }
+
+  final newStock = product.stock - quantity;
+
+  final result = await db.update(
+    'products',
+    {
+      'stock': newStock,
+    },
+    where: 'id = ?',
+    whereArgs: [productId],
+  );
+
+  if (result > 0) {
+    await _logProductAction(
+      action: 'stock_reduced',
+      description:
+          'Reduced stock of "${product.name}" by $quantity. New stock: $newStock.',
+      entityId: productId,
     );
   }
 
+  return result;
+}
   // ============================================================
   // INCREASE STOCK
   //
@@ -229,32 +336,57 @@ Future<int> deleteProduct(String id) async {
   // ============================================================
 
   Future<int> increaseStock(
-    String productId,
-    int quantity,
-  ) async {
-    final db = await _databaseHelper.database;
+  String productId,
+  int quantity,
+) async {
+  final db = await _databaseHelper.database;
 
-    final product = await getProductById(productId);
+  final product = await getProductById(productId);
 
-    if (product == null) {
-      return 0;
-    }
+  if (product == null) {
+    await _logProductAction(
+      action: 'stock_increase_failed',
+      description:
+          'Stock increase failed because product $productId was not found.',
+      entityId: productId,
+    );
 
-    if (quantity <= 0) {
-      return 0;
-    }
+    return 0;
+  }
 
-    final newStock = product.stock + quantity;
+  if (quantity <= 0) {
+    await _logProductAction(
+      action: 'stock_increase_failed',
+      description:
+          'Stock increase failed for product "${product.name}" because the requested quantity was invalid.',
+      entityId: productId,
+    );
 
-    return await db.update(
-      'products',
-      {
-        'stock': newStock,
-      },
-      where: 'id = ?',
-      whereArgs: [productId],
+    return 0;
+  }
+
+  final newStock = product.stock + quantity;
+
+  final result = await db.update(
+    'products',
+    {
+      'stock': newStock,
+    },
+    where: 'id = ?',
+    whereArgs: [productId],
+  );
+
+  if (result > 0) {
+    await _logProductAction(
+      action: 'stock_increased',
+      description:
+          'Increased stock of "${product.name}" by $quantity. New stock: $newStock.',
+      entityId: productId,
     );
   }
+
+  return result;
+}
 
   // ============================================================
   // SEARCH PRODUCTS

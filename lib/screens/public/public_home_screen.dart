@@ -91,7 +91,7 @@ class PublicHomeScreen extends StatelessWidget {
 
           Positioned.fill(
             child: Image.asset(
-              'assets/images/business_background1.jpg',
+              'assets/images/business_image.PNG',
               fit: BoxFit.cover,
               alignment: Alignment.center,
               errorBuilder: (

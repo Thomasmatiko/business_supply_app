@@ -4,6 +4,9 @@ import '../../app/routes.dart';
 import '../../services/user_service.dart';
 import 'register_screen.dart';
 import '../../services/auth_service.dart';
+import 'forgot_password_screen.dart';
+
+import '../../services/activity_log_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,6 +23,9 @@ final AuthService _authService = AuthService.instance;
   final _passwordController = TextEditingController();
 
   final UserService _userService = UserService.instance;
+
+final ActivityLogService _activityLogService =
+    ActivityLogService.instance;
 
   bool _isPasswordVisible = false;
   bool _rememberMe = false;
@@ -54,21 +60,29 @@ final AuthService _authService = AuthService.instance;
       if (!mounted) return;
 
       if (user == null) {
-        setState(() {
-          _isLoading = false;
-        });
+  await _activityLogService.logActivity(
+    action: 'login_failed',
+    description:
+        'Failed login attempt for ${_emailController.text.trim()}.',
+    type: 'authentication',
+  );
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Invalid email or password.',
-            ),
-          ),
-        );
+  if (!mounted) return;
 
-        return;
-      }
+  setState(() {
+    _isLoading = false;
+  });
 
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text(
+        'Invalid email or password.',
+      ),
+    ),
+  );
+
+  return;
+}
          _authService.setCurrentUser(user);
       setState(() {
         _isLoading = false;
@@ -144,15 +158,13 @@ final AuthService _authService = AuthService.instance;
   // ============================================================
 
   void _forgotPassword() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Password recovery will be available soon.',
-        ),
-      ),
-    );
-  }
-
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => const ForgotPasswordScreen(),
+    ),
+  );
+}
   // ============================================================
   // REGISTER
   // ============================================================

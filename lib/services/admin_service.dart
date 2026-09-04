@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../database/database_helper.dart';
 import '../models/user.dart';
+import 'activity_log_service.dart';
 
 class AdminDashboardStats {
   final int totalUsers;
@@ -44,7 +45,11 @@ class AdminDashboardStats {
 class AdminService {
   static final AdminService instance = AdminService._init();
 
-  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper =
+      DatabaseHelper.instance;
+
+  final ActivityLogService _activityLogService =
+      ActivityLogService.instance;
 
   AdminService._init();
 
@@ -121,6 +126,35 @@ class AdminService {
   }
 
   // ============================================================
+  // ADMIN ACTION LOGGER
+  // ============================================================
+
+  Future<void> _logAdminAction({
+    required AppUser currentUser,
+    required String action,
+    required String description,
+    String? entityType,
+    String? entityId,
+  }) async {
+    try {
+      await _activityLogService.logAction(
+        userId: currentUser.id,
+        userName: currentUser.name,
+        action: action,
+        description: description,
+        type: 'admin',
+        entityType: entityType,
+        entityId: entityId,
+        audit: true,
+      );
+    } catch (e) {
+      debugPrint(
+        'Admin action logging error: $e',
+      );
+    }
+  }
+
+  // ============================================================
   // GET ALL USERS
   // ============================================================
 
@@ -142,12 +176,18 @@ class AdminService {
   // ============================================================
 
   Future<AppUser?> getUserById(String id) async {
+    final cleanId = id.trim();
+
+    if (cleanId.isEmpty) {
+      return null;
+    }
+
     final db = await _databaseHelper.database;
 
     final result = await db.query(
       'users',
       where: 'id = ?',
-      whereArgs: [id],
+      whereArgs: [cleanId],
       limit: 1,
     );
 
@@ -163,12 +203,22 @@ class AdminService {
   // ============================================================
 
   Future<AppUser?> getAdminById(String id) async {
+    final cleanId = id.trim();
+
+    if (cleanId.isEmpty) {
+      return null;
+    }
+
     final db = await _databaseHelper.database;
 
     final result = await db.query(
       'users',
-      where: 'id = ? AND LOWER(TRIM(role)) = ?',
-      whereArgs: [id, 'admin'],
+      where:
+          'id = ? AND LOWER(TRIM(role)) = ?',
+      whereArgs: [
+        cleanId,
+        'admin',
+      ],
       limit: 1,
     );
 
@@ -210,7 +260,10 @@ class AdminService {
       where:
           'LOWER(TRIM(role)) = ? '
           'AND LOWER(TRIM(admin_level)) = ?',
-      whereArgs: ['admin', 'normal'],
+      whereArgs: [
+        'admin',
+        'normal',
+      ],
       orderBy: 'name ASC',
     );
 
@@ -231,7 +284,10 @@ class AdminService {
       where:
           'LOWER(TRIM(role)) = ? '
           'AND LOWER(TRIM(admin_level)) = ?',
-      whereArgs: ['admin', 'leader'],
+      whereArgs: [
+        'admin',
+        'leader',
+      ],
       orderBy: 'name ASC',
     );
 
@@ -414,13 +470,23 @@ class AdminService {
         totalSales: _getTotal(salesResult),
       );
     } catch (e, stackTrace) {
-      debugPrint('==============================================');
-      debugPrint('ADMIN DASHBOARD DATABASE ERROR');
-      debugPrint('==============================================');
+      debugPrint(
+        '==============================================',
+      );
+      debugPrint(
+        'ADMIN DASHBOARD DATABASE ERROR',
+      );
+      debugPrint(
+        '==============================================',
+      );
       debugPrint(e.toString());
-      debugPrint('----------------------------------------------');
+      debugPrint(
+        '----------------------------------------------',
+      );
       debugPrint(stackTrace.toString());
-      debugPrint('==============================================');
+      debugPrint(
+        '==============================================',
+      );
 
       rethrow;
     }
@@ -443,7 +509,8 @@ class AdminService {
     }
 
     final name = newAdmin.name.trim();
-    final email = newAdmin.email.trim().toLowerCase();
+    final email =
+        newAdmin.email.trim().toLowerCase();
     final phone = newAdmin.phone.trim();
     final password = newAdmin.password;
 
@@ -456,7 +523,9 @@ class AdminService {
     }
 
     if (phone.isEmpty) {
-      throw Exception('Phone number is required.');
+      throw Exception(
+        'Phone number is required.',
+      );
     }
 
     if (password.isEmpty) {
@@ -468,7 +537,8 @@ class AdminService {
     final existingUser = await db.query(
       'users',
       columns: ['id'],
-      where: 'LOWER(TRIM(email)) = ?',
+      where:
+          'LOWER(TRIM(email)) = ?',
       whereArgs: [email],
       limit: 1,
     );
@@ -479,9 +549,10 @@ class AdminService {
       );
     }
 
-    final adminId = await _generateNextAdminId(db);
+    final adminId =
+        await _generateNextAdminId(db);
 
-    return db.insert(
+    final inserted = await db.insert(
       'users',
       {
         'id': adminId,
@@ -493,13 +564,29 @@ class AdminService {
         'admin_level': 'normal',
       },
     );
+
+    if (inserted > 0) {
+      await _logAdminAction(
+        currentUser: currentUser,
+        action: 'CREATE_ADMIN',
+        entityType: 'user',
+        entityId: adminId,
+        description:
+            'Leader Admin created Normal Admin '
+            '$adminId ($name).',
+      );
+    }
+
+    return inserted;
   }
 
   // ============================================================
   // GENERATE NEXT ADMIN ID
   // ============================================================
 
-  Future<String> _generateNextAdminId(Database db) async {
+  Future<String> _generateNextAdminId(
+    Database db,
+  ) async {
     final result = await db.rawQuery(
       '''
       SELECT id
@@ -511,7 +598,8 @@ class AdminService {
     int highestNumber = 1;
 
     for (final row in result) {
-      final id = row['id']?.toString() ?? '';
+      final id =
+          row['id']?.toString() ?? '';
 
       final match = RegExp(
         r'^ADMIN(\d+)$',
@@ -529,7 +617,8 @@ class AdminService {
       }
     }
 
-    final nextNumber = highestNumber + 1;
+    final nextNumber =
+        highestNumber + 1;
 
     return 'ADMIN${nextNumber.toString().padLeft(3, '0')}';
   }
@@ -544,15 +633,22 @@ class AdminService {
   }) async {
     _requireLeaderAdmin(currentUser);
 
-    _preventLeaderAction(userId);
+    final cleanUserId = userId.trim();
+
+    if (cleanUserId.isEmpty) {
+      throw Exception('User ID is required.');
+    }
+
+    _preventLeaderAction(cleanUserId);
 
     _preventSelfAction(
       currentUser: currentUser,
-      targetUserId: userId,
+      targetUserId: cleanUserId,
       message: 'You cannot promote yourself.',
     );
 
-    final user = await getUserById(userId);
+    final user =
+        await getUserById(cleanUserId);
 
     if (user == null) {
       throw Exception('User not found.');
@@ -564,17 +660,32 @@ class AdminService {
       );
     }
 
-    final db = await _databaseHelper.database;
+    final db =
+        await _databaseHelper.database;
 
-    return db.update(
+    final updated = await db.update(
       'users',
       {
         'role': 'admin',
         'admin_level': 'normal',
       },
       where: 'id = ?',
-      whereArgs: [userId],
+      whereArgs: [cleanUserId],
     );
+
+    if (updated > 0) {
+      await _logAdminAction(
+        currentUser: currentUser,
+        action: 'PROMOTE_USER_TO_ADMIN',
+        entityType: 'user',
+        entityId: cleanUserId,
+        description:
+            'Leader Admin promoted user '
+            '$cleanUserId (${user.name}) to Normal Admin.',
+      );
+    }
+
+    return updated;
   }
 
   // ============================================================
@@ -587,12 +698,15 @@ class AdminService {
   }) async {
     _requireLeaderAdmin(currentUser);
 
-    _preventLeaderAction(updatedAdmin.id);
+    _preventLeaderAction(
+      updatedAdmin.id,
+    );
 
     _preventSelfAction(
       currentUser: currentUser,
       targetUserId: updatedAdmin.id,
-      message: 'You cannot edit your own administrator account here.',
+      message:
+          'You cannot edit your own administrator account here.',
     );
 
     if (!updatedAdmin.isNormalAdmin) {
@@ -602,7 +716,8 @@ class AdminService {
     }
 
     final name = updatedAdmin.name.trim();
-    final email = updatedAdmin.email.trim().toLowerCase();
+    final email =
+        updatedAdmin.email.trim().toLowerCase();
     final phone = updatedAdmin.phone.trim();
 
     if (name.isEmpty) {
@@ -614,13 +729,18 @@ class AdminService {
     }
 
     if (phone.isEmpty) {
-      throw Exception('Phone number is required.');
+      throw Exception(
+        'Phone number is required.',
+      );
     }
 
-    final existing = await getUserById(updatedAdmin.id);
+    final existing =
+        await getUserById(updatedAdmin.id);
 
     if (existing == null) {
-      throw Exception('Administrator not found.');
+      throw Exception(
+        'Administrator not found.',
+      );
     }
 
     if (!existing.isNormalAdmin) {
@@ -629,7 +749,8 @@ class AdminService {
       );
     }
 
-    final db = await _databaseHelper.database;
+    final db =
+        await _databaseHelper.database;
 
     final duplicateEmail = await db.query(
       'users',
@@ -649,7 +770,7 @@ class AdminService {
       );
     }
 
-    return db.update(
+    final updated = await db.update(
       'users',
       {
         'name': name,
@@ -659,6 +780,21 @@ class AdminService {
       where: 'id = ?',
       whereArgs: [updatedAdmin.id],
     );
+
+    if (updated > 0) {
+      await _logAdminAction(
+        currentUser: currentUser,
+        action: 'UPDATE_ADMIN',
+        entityType: 'user',
+        entityId: updatedAdmin.id,
+        description:
+            'Leader Admin updated Normal Admin '
+            '${updatedAdmin.id}. '
+            'Name: $name, Email: $email, Phone: $phone.',
+      );
+    }
+
+    return updated;
   }
 
   // ============================================================
@@ -671,19 +807,30 @@ class AdminService {
   }) async {
     _requireLeaderAdmin(currentUser);
 
-    _preventLeaderAction(adminId);
+    final cleanAdminId = adminId.trim();
+
+    if (cleanAdminId.isEmpty) {
+      throw Exception(
+        'Admin ID is required.',
+      );
+    }
+
+    _preventLeaderAction(cleanAdminId);
 
     _preventSelfAction(
       currentUser: currentUser,
-      targetUserId: adminId,
+      targetUserId: cleanAdminId,
       message:
           'You cannot remove your own administrator privileges.',
     );
 
-    final admin = await getAdminById(adminId);
+    final admin =
+        await getAdminById(cleanAdminId);
 
     if (admin == null) {
-      throw Exception('Administrator not found.');
+      throw Exception(
+        'Administrator not found.',
+      );
     }
 
     if (!isNormalAdmin(admin)) {
@@ -693,17 +840,33 @@ class AdminService {
       );
     }
 
-    final db = await _databaseHelper.database;
+    final db =
+        await _databaseHelper.database;
 
-    return db.update(
+    final updated = await db.update(
       'users',
       {
         'role': 'buyer',
         'admin_level': 'none',
       },
       where: 'id = ?',
-      whereArgs: [adminId],
+      whereArgs: [cleanAdminId],
     );
+
+    if (updated > 0) {
+      await _logAdminAction(
+        currentUser: currentUser,
+        action: 'REMOVE_ADMIN_PRIVILEGES',
+        entityType: 'user',
+        entityId: cleanAdminId,
+        description:
+            'Leader Admin removed administrator '
+            'privileges from ${admin.name} '
+            '($cleanAdminId). User role changed to buyer.',
+      );
+    }
+
+    return updated;
   }
 
   // ============================================================
@@ -716,18 +879,33 @@ class AdminService {
   }) async {
     _requireAdmin(currentUser);
 
-    _preventLeaderAction(targetUserId);
+    final cleanTargetUserId =
+        targetUserId.trim();
+
+    if (cleanTargetUserId.isEmpty) {
+      throw Exception(
+        'Target user ID is required.',
+      );
+    }
+
+    _preventLeaderAction(
+      cleanTargetUserId,
+    );
 
     _preventSelfAction(
       currentUser: currentUser,
-      targetUserId: targetUserId,
-      message: 'You cannot delete your own account.',
+      targetUserId: cleanTargetUserId,
+      message:
+          'You cannot delete your own account.',
     );
 
-    final targetUser = await getUserById(targetUserId);
+    final targetUser =
+        await getUserById(cleanTargetUserId);
 
     if (targetUser == null) {
-      throw Exception('User not found.');
+      throw Exception(
+        'User not found.',
+      );
     }
 
     if (targetUser.isLeaderAdmin) {
@@ -743,13 +921,30 @@ class AdminService {
       );
     }
 
-    final db = await _databaseHelper.database;
+    final db =
+        await _databaseHelper.database;
 
-    return db.delete(
+    final deleted = await db.delete(
       'users',
       where: 'id = ?',
-      whereArgs: [targetUserId],
+      whereArgs: [cleanTargetUserId],
     );
+
+    if (deleted > 0) {
+      await _logAdminAction(
+        currentUser: currentUser,
+        action: 'DELETE_USER',
+        entityType: 'user',
+        entityId: cleanTargetUserId,
+        description:
+            '${currentUser.name} deleted user '
+            '${targetUser.name} '
+            '($cleanTargetUserId). '
+            'Deleted user role: ${targetUser.role}.',
+      );
+    }
+
+    return deleted;
   }
 
   // ============================================================
@@ -762,18 +957,30 @@ class AdminService {
   }) async {
     _requireLeaderAdmin(currentUser);
 
-    _preventLeaderAction(adminId);
+    final cleanAdminId = adminId.trim();
+
+    if (cleanAdminId.isEmpty) {
+      throw Exception(
+        'Admin ID is required.',
+      );
+    }
+
+    _preventLeaderAction(cleanAdminId);
 
     _preventSelfAction(
       currentUser: currentUser,
-      targetUserId: adminId,
-      message: 'You cannot delete your own account.',
+      targetUserId: cleanAdminId,
+      message:
+          'You cannot delete your own account.',
     );
 
-    final admin = await getAdminById(adminId);
+    final admin =
+        await getAdminById(cleanAdminId);
 
     if (admin == null) {
-      throw Exception('Administrator not found.');
+      throw Exception(
+        'Administrator not found.',
+      );
     }
 
     if (!isNormalAdmin(admin)) {
@@ -782,16 +989,32 @@ class AdminService {
       );
     }
 
-    final db = await _databaseHelper.database;
+    final db =
+        await _databaseHelper.database;
 
-    return db.delete(
+    final deleted = await db.delete(
       'users',
-      where: 'id = ? AND LOWER(TRIM(role)) = ?',
+      where:
+          'id = ? AND LOWER(TRIM(role)) = ?',
       whereArgs: [
-        adminId,
+        cleanAdminId,
         'admin',
       ],
     );
+
+    if (deleted > 0) {
+      await _logAdminAction(
+        currentUser: currentUser,
+        action: 'DELETE_ADMIN',
+        entityType: 'user',
+        entityId: cleanAdminId,
+        description:
+            'Leader Admin deleted Normal Admin '
+            '${admin.name} ($cleanAdminId).',
+      );
+    }
+
+    return deleted;
   }
 
   // ============================================================
@@ -799,7 +1022,8 @@ class AdminService {
   // ============================================================
 
   Future<int> getAdminCount() async {
-    final db = await _databaseHelper.database;
+    final db =
+        await _databaseHelper.database;
 
     final result = await db.rawQuery(
       '''
@@ -818,7 +1042,8 @@ class AdminService {
   // ============================================================
 
   Future<int> getLeaderAdminCount() async {
-    final db = await _databaseHelper.database;
+    final db =
+        await _databaseHelper.database;
 
     final result = await db.rawQuery(
       '''
@@ -841,7 +1066,8 @@ class AdminService {
   // ============================================================
 
   Future<int> getNormalAdminCount() async {
-    final db = await _databaseHelper.database;
+    final db =
+        await _databaseHelper.database;
 
     final result = await db.rawQuery(
       '''
@@ -864,7 +1090,8 @@ class AdminService {
   // ============================================================
 
   Future<Map<String, int>> getUserCounts() async {
-    final db = await _databaseHelper.database;
+    final db =
+        await _databaseHelper.database;
 
     final result = await db.rawQuery(
       '''
@@ -904,10 +1131,14 @@ class AdminService {
     final row = result.first;
 
     return {
-      'total': (row['total'] as num?)?.toInt() ?? 0,
-      'buyers': (row['buyers'] as num?)?.toInt() ?? 0,
-      'sellers': (row['sellers'] as num?)?.toInt() ?? 0,
-      'admins': (row['admins'] as num?)?.toInt() ?? 0,
+      'total':
+          (row['total'] as num?)?.toInt() ?? 0,
+      'buyers':
+          (row['buyers'] as num?)?.toInt() ?? 0,
+      'sellers':
+          (row['sellers'] as num?)?.toInt() ?? 0,
+      'admins':
+          (row['admins'] as num?)?.toInt() ?? 0,
     };
   }
 
@@ -916,7 +1147,8 @@ class AdminService {
   // ============================================================
 
   Future<void> ensureLeaderAdmin() async {
-    final db = await _databaseHelper.database;
+    final db =
+        await _databaseHelper.database;
 
     final result = await db.query(
       'users',
@@ -937,7 +1169,8 @@ class AdminService {
           'role': 'admin',
           'admin_level': 'leader',
         },
-        conflictAlgorithm: ConflictAlgorithm.ignore,
+        conflictAlgorithm:
+            ConflictAlgorithm.ignore,
       );
 
       return;
@@ -962,22 +1195,52 @@ class AdminService {
   // ============================================================
 
   Future<int> deleteAllUsersExceptLeader(
-    String leaderEmail,
-  ) async {
-    final db = await _databaseHelper.database;
+  String leaderEmail,
+) async {
+  final db =
+      await _databaseHelper.database;
 
-    final normalizedEmail =
-        leaderEmail.trim().toLowerCase();
+  final normalizedEmail =
+      leaderEmail.trim().toLowerCase();
 
-    return db.delete(
-      'users',
-      where:
-          'LOWER(TRIM(email)) != ? AND id != ?',
-      whereArgs: [
-        normalizedEmail,
-        leaderAdminId,
-      ],
+  if (normalizedEmail.isEmpty) {
+    throw Exception(
+      'Leader email is required.',
     );
+  }
+
+  final deleted = await db.delete(
+    'users',
+    where:
+        'LOWER(TRIM(email)) != ? AND id != ?',
+    whereArgs: [
+      normalizedEmail,
+      leaderAdminId,
+    ],
+  );
+
+  if (deleted > 0) {
+    await _logAdminAction(
+      currentUser: AppUser(
+        id: leaderAdminId,
+        name: leaderAdminName,
+        email: leaderAdminEmail,
+        phone: leaderAdminPhone,
+        password: leaderAdminPassword,
+        role: 'admin',
+        adminLevel: 'leader',
+      ),
+      action: 'DELETE_ALL_USERS_EXCEPT_LEADER',
+      entityType: 'users',
+      entityId: leaderAdminId,
+      description:
+          'All users except the permanent Leader Admin '
+          'were deleted. Deleted records: $deleted.',
+    );
+  }
+
+  return deleted;
+
   }
 
   // ============================================================

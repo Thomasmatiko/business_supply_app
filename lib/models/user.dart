@@ -1,3 +1,4 @@
+
 class AppUser {
   final String id;
   final String name;

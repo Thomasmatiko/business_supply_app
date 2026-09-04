@@ -1,24 +1,131 @@
 
 import 'package:flutter/material.dart';
 
+import '../../services/auth_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/settings_service.dart';
 import 'change_password_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({
+    super.key,
+  });
+
+  @override
+  State<SettingsScreen> createState() =>
+      _SettingsScreenState();
+}
+
+class _SettingsScreenState
+    extends State<SettingsScreen> {
+  final SettingsService _settings =
+      SettingsService.instance;
+
+  final NotificationService _notificationService =
+      NotificationService.instance;
+
+  final AuthService _authService =
+      AuthService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _notificationService.addListener(
+      _onNotificationSettingsChanged,
+    );
+
+    _loadNotificationSettings();
+  }
+
+  @override
+  void dispose() {
+    _notificationService.removeListener(
+      _onNotificationSettingsChanged,
+    );
+
+    super.dispose();
+  }
+
+  void _onNotificationSettingsChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  // ============================================================
+  // CURRENT USER
+  // ============================================================
+
+  String? get _userId {
+    return _authService.currentUser?.id;
+  }
+
+  // ============================================================
+  // LOAD NOTIFICATION SETTINGS
+  // ============================================================
+
+  Future<void> _loadNotificationSettings() async {
+    final userId = _userId;
+
+    if (userId == null) {
+      return;
+    }
+
+    await _notificationService
+        .loadNotificationsEnabled(userId);
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  // ============================================================
+  // CHANGE NOTIFICATION SETTING
+  // ============================================================
+
+  Future<void> _setNotificationsEnabled(
+    bool enabled,
+  ) async {
+    final userId = _userId;
+
+    if (userId == null) {
+      return;
+    }
+
+    await _notificationService
+        .setNotificationsEnabled(
+      userId,
+      enabled,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          enabled
+              ? 'Notifications turned on'
+              : 'Notifications turned off',
+        ),
+        duration:
+            const Duration(seconds: 2),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final settings =
-        SettingsService.instance;
-
     return AnimatedBuilder(
-      animation: settings,
+      animation: _settings,
       builder: (context, _) {
         return Scaffold(
           appBar: AppBar(
-            title:
-                const Text('Settings'),
+            title: const Text(
+              'Settings',
+            ),
           ),
           body: ListView(
             padding:
@@ -39,18 +146,16 @@ class SettingsScreen extends StatelessWidget {
                     ),
               ),
 
-              const SizedBox(
-                height: 8,
-              ),
+              const SizedBox(height: 8),
 
               Card(
                 child:
                     RadioGroup<ThemeMode>(
                   groupValue:
-                      settings.themeMode,
+                      _settings.themeMode,
                   onChanged: (value) {
                     if (value != null) {
-                      settings
+                      _settings
                           .setThemeMode(
                         value,
                       );
@@ -114,9 +219,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              const SizedBox(
-                height: 24,
-              ),
+              const SizedBox(height: 24),
 
               // ==================================================
               // ACCOUNT SECURITY
@@ -133,9 +236,7 @@ class SettingsScreen extends StatelessWidget {
                     ),
               ),
 
-              const SizedBox(
-                height: 8,
-              ),
+              const SizedBox(height: 8),
 
               Card(
                 child: ListTile(
@@ -167,9 +268,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
 
-              const SizedBox(
-                height: 24,
-              ),
+              const SizedBox(height: 24),
 
               // ==================================================
               // NOTIFICATIONS
@@ -186,33 +285,47 @@ class SettingsScreen extends StatelessWidget {
                     ),
               ),
 
-              const SizedBox(
-                height: 8,
-              ),
+              const SizedBox(height: 8),
 
               Card(
-                child:
-                    SwitchListTile(
-                  value: settings
-                      .notificationsEnabled,
-                  onChanged: settings
-                      .setNotificationsEnabled,
+                child: SwitchListTile(
+                  value: _userId != null
+                      ? _notificationService
+                          .notificationsEnabled(
+                          _userId!,
+                        )
+                      : false,
+                  onChanged: _userId == null
+                      ? null
+                      : _setNotificationsEnabled,
                   title: const Text(
                     'Notifications',
                   ),
-                  subtitle: const Text(
-                    'Enable application notifications',
+                  subtitle: Text(
+                    _userId == null
+                        ? 'Login to manage notifications'
+                        : _notificationService
+                                .notificationsEnabled(
+                                _userId!,
+                              )
+                            ? 'Notifications are enabled'
+                            : 'Notifications are disabled',
                   ),
-                  secondary: const Icon(
-                    Icons
-                        .notifications_outlined,
+                  secondary: Icon(
+                    _userId != null &&
+                            _notificationService
+                                .notificationsEnabled(
+                              _userId!,
+                            )
+                        ? Icons
+                            .notifications_active_outlined
+                        : Icons
+                            .notifications_off_outlined,
                   ),
                 ),
               ),
 
-              const SizedBox(
-                height: 24,
-              ),
+              const SizedBox(height: 24),
 
               // ==================================================
               // ABOUT
@@ -229,9 +342,7 @@ class SettingsScreen extends StatelessWidget {
                     ),
               ),
 
-              const SizedBox(
-                height: 8,
-              ),
+              const SizedBox(height: 8),
 
               Card(
                 child: Column(
